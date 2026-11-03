@@ -55,6 +55,9 @@ Limitaciones reales (lo que NO está hecho):
 - Sin sincronización entre dispositivos probada (dos dispositivos a la vez): las funciones son idempotentes y hay pruebas secuenciales, pero no concurrentes.
 - Para ver las pantallas hay que cargar las variables de Supabase y correr `npx expo start --web`; no hay ambiente de revisión publicado.
 
+## Volumen del cerebro 3D con 4 áreas (2026-11-03, segunda pasada)
+Ver D-018. Cámara más baja, paredes más altas y gruesas, azulejos y sombra interior, agua con profundidad según el nivel. Capturas: `1-equilibrio.png`, `1b-…`, `1c-niveles-extremos*.png`. Pendiente: 2–8 áreas. Sin verificar en dispositivos reales.
+
 ## Revisión visual de Equilibrio — cerebro 3D (2026-11-03)
 Pedido: acercar la pantalla a las referencias (cerebro con volumen, piletas, agua translúcida, fondo crema, celular con cerebro protagonista, leyenda, sugerencia y tareas).
 Hecho (D-014 a D-017):

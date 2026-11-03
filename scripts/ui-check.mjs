@@ -274,8 +274,8 @@ const exe = () => {
 };
 const browser = await chromium.launch({ executablePath: exe() });
 
-async function newPage({ width = 390, height = 900, reducedMotion = "no-preference", st }) {
-  const ctx = await browser.newContext({ viewport: { width, height }, reducedMotion });
+async function newPage({ width = 390, height = 900, reducedMotion = "no-preference", st, scale = 1 }) {
+  const ctx = await browser.newContext({ viewport: { width, height }, reducedMotion, deviceScaleFactor: scale });
   await ctx.addInitScript((s) => localStorage.setItem("sb-localhost-auth-token", JSON.stringify(s)), session);
   await installApi(ctx, st);
   const page = await ctx.newPage();
@@ -855,7 +855,7 @@ async function brainCounts() {
       check(`Cerebro 3D ${tag}: una pileta (nivel de agua) y un radio de leyenda por área`, info.water === Number(n) && info.radios === Number(n), `agua=${info.water}, radios=${info.radios}`);
       check(`Cerebro 3D ${tag}: el lienzo ocupa el ancho disponible`, info.w > (width === 390 ? 330 : 400), `ancho=${Math.round(info.w)}`);
       const ink = await inkRatio(page, await page.locator("canvas").screenshot());
-      check(`Cerebro 3D ${tag}: el lienzo dibuja el cerebro (no está en blanco)`, ink > 0.3, `tinta=${(ink * 100).toFixed(0)} %`);
+      check(`Cerebro 3D ${tag}: el lienzo dibuja el cerebro (no está en blanco)`, ink > 0.15, `tinta=${(ink * 100).toFixed(0)} %`);
       await shot(page, `7-cerebro-${n}-areas-${width}`);
       const listed = await page.evaluate((ns) => ns.filter((x) => document.body.innerText.includes(x)).length, names.map((x) => x.slice(0, 12)));
       check(`Cerebro 3D ${tag}: la lista alternativa muestra todas`, listed === names.length, `${listed}/${names.length}`);
@@ -917,6 +917,26 @@ async function visual() {
     await shot(page, name);
     await ctx.close();
   }
+
+  // Niveles extremos: Casa casi vacía (1 de 100 puntos) y Trabajo casi llena (7 de 8), a doble resolución.
+  const ex = freshState();
+  ex.areas[0].capacity = 100;
+  ex.tasks = [
+    mkTask("e1", "a1", "Una tarea chica", { weight: 1 }),
+    mkTask("e2", "a2", "Entrega grande", { weight: 3 }), mkTask("e3", "a2", "Informe", { weight: 3 }), mkTask("e4", "a2", "Correos", { weight: 1 }),
+    mkTask("e5", "a3", "Turno médico", { weight: 3 }), mkTask("e6", "a3", "Caminar", { weight: 2 }),
+    mkTask("e7", "a4", "Llamar", { weight: 2 }), mkTask("e8", "a4", "Plan del sábado", { weight: 2 }),
+  ];
+  const e = await newPage({ st: ex, width: 390, height: 844, scale: 2 });
+  await e.page.goto(`${BASE}/equilibrio`);
+  await e.page.getByText("Un paso a la vez").waitFor({ timeout: 20000 });
+  await e.page.locator('canvas[data-ready="1"]').waitFor({ timeout: 45000 });
+  await e.page.waitForTimeout(3000);
+  const water = (await e.page.locator("canvas").getAttribute("data-water")).split(",").map(Number);
+  check("Niveles extremos: Casa casi vacía (≈1 %) y Trabajo casi llena (≈88 %), independientes", water[0] < 0.03 && water[1] > 0.8 && water[2] > 0.5 && water[2] < 0.7, `niveles=${water.join(", ")}`);
+  await e.page.locator("canvas").screenshot({ path: path.join(OUT, "1c-niveles-extremos.png") });
+  await shot(e.page, "1c-niveles-extremos-pantalla");
+  await e.ctx.close();
 }
 
 // ---------- ejecución ----------

@@ -81,3 +81,11 @@ Fondo `#FCF8F2` (el `#FAF9FC` del PRD §2 era más frío), tarjetas blancas de e
 ## D-017 · Sugerencia del próximo paso, versión inicial (2026-11-03)
 `src/domain/nextStep.ts`, determinista y con motivo verificable. Orden: (1) tarea urgente abierta, (2) área elegida hoy en el plan que todavía no completó tareas, (3) mayor carga pendiente si no es baja. «Ya avanzaste en X» solo aparece si hoy se completó algo en X. No dice «descuido» por una pileta vacía. Se puede rechazar con «Ahora no» sin cambiar datos. Falta (hito 5): tiempo registrado, metas, silencios, excepciones y «caber en el tiempo disponible».
 
+## D-018 · Volumen del cerebro 3D, caso de 4 áreas (2026-11-03)
+Tras comparar con la referencia (ver `docs/ESPECIFICACION_MODELO_3D.md` §2) se rehízo la proporción y la luz **solo para 4 áreas**:
+- Cámara a 52° (antes 64°); pared de 0,6 + bisel (antes 0,5), base de 0,6; borde y paredes entre piletas más gruesos.
+- Interior: paredes con **azulejos** y oscurecimiento hacia el fondo; piso con baldosas y **oclusión ambiental dibujada** (oscuro en el borde, claro al centro); sombra proyectada por las paredes (luz principal baja, sombras suaves) y degradado de color de vértice en el borde cerámico.
+- Agua: la **profundidad la da el agua**: un fondo vacío es azulejo pálido con las juntas a la vista y sin ondas ni cáusticas; el color, la opacidad y las ondas crecen con el nivel (opacidad 0,14 → 0,86). Se dibuja también la cara trasera del volumen, que tiñe la pared lejana por debajo de la línea de agua, y una **línea de flotación** clara sobre la pared.
+- Los adornos no cambian, salvo que las plantas van solo en el borde trasero.
+**Pendiente:** adaptar esto a 2–8 áreas (los garantías de nombres y las pruebas de ubicación de nombres solo están medidas para 4; ver `it.todo`). **Sigue faltando respecto de la referencia:** silueta con lóbulos finos, escalones, texturas de azulejo con relieve, refracción real y cáusticas de luz con detalle.
+

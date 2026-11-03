@@ -42,8 +42,8 @@ const Y0 = -4.9;
 const NX = Math.round(12.4 / CELL);
 const NY = Math.round(9.8 / CELL);
 /** Espesor de la pared exterior (aprox.) y de la pared entre piletas. */
-export const RIM = 0.23;
-export const WALL = 0.4;
+export const RIM = 0.26;
+export const WALL = 0.5;
 
 const idx = (i: number, j: number) => j * NX + i;
 const px = (i: number) => X0 + (i + 0.5) * CELL;

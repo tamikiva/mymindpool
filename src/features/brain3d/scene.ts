@@ -24,6 +24,20 @@ export interface SceneArea {
 const MAX_WATER = TOTAL_H * 0.88;
 const CREAM = "#F4EBDC";
 
+/** Oscurece la parte baja de una malla (sombra de contacto simple): color de vértice según la altura. */
+function shade(g: THREE.BufferGeometry, bottom: number, top: number): void {
+  g.computeBoundingBox();
+  const bb = g.boundingBox!;
+  const pos = g.attributes.position;
+  const colors = new Float32Array(pos.count * 3);
+  for (let k = 0; k < pos.count; k++) {
+    const t = (pos.getY(k) - bb.min.y) / Math.max(1e-6, bb.max.y - bb.min.y);
+    const v = bottom + (top - bottom) * t;
+    colors.set([v, v, v], k * 3);
+  }
+  g.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+}
+
 const mix = (a: string, b: string, t: number) => new THREE.Color(a).lerp(new THREE.Color(b), t);
 
 const toShape = (poly: readonly Pt[]) => {
@@ -167,6 +181,118 @@ function shadowTexture(outline: readonly Pt[], b: BrainLayout["bounds"]): { tex:
   return { tex, w, h, cx: (b.minX + b.maxX) / 2, cy: (b.minY + b.maxY) / 2 };
 }
 
+/** Tira plana entre dos contornos con el mismo número de puntos (sin triangular áreas: evita rellenos erróneos en esquinas cerradas). */
+function stripGeometry(a: readonly Pt[], b: readonly Pt[]): THREE.BufferGeometry {
+  const n = a.length;
+  const pos: number[] = [];
+  for (let i = 0; i < n; i++) pos.push(a[i].x, 0, a[i].y, b[i].x, 0, b[i].y);
+  const idx: number[] = [];
+  for (let i = 0; i < n; i++) {
+    const p = i * 2;
+    const q = ((i + 1) % n) * 2;
+    idx.push(p, q, p + 1, p + 1, q, q + 1);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  g.setIndex(idx);
+  return g;
+}
+
+/** Tira de pared interior (sin tapas): UV en unidades de azulejo, color de vértice más oscuro abajo. */
+function linerGeometry(poly: readonly Pt[], height: number, tint: THREE.Color, floorShade: number): THREE.BufferGeometry {
+  const n = poly.length;
+  const pos: number[] = [];
+  const uv: number[] = [];
+  const col: number[] = [];
+  let run = 0;
+  for (let i = 0; i <= n; i++) {
+    const p = poly[i % n];
+    if (i > 0) run += Math.hypot(p.x - poly[i - 1].x, p.y - poly[i - 1].y);
+    for (const y of [0, height]) {
+      pos.push(p.x, y, p.y);
+      uv.push(run / 0.9, y / 0.9);
+      const k = floorShade + (1 - floorShade) * Math.pow(y / height, 0.8);
+      col.push(tint.r * k, tint.g * k, tint.b * k);
+    }
+  }
+  const idx: number[] = [];
+  for (let i = 0; i < n; i++) {
+    const a = i * 2;
+    idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+  g.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  return g;
+}
+
+/** Piso de una pileta: baldosas más oscurecimiento progresivo hacia el borde, dibujado en un lienzo propio. */
+function floorTexture(poly: readonly Pt[], geo: THREE.BufferGeometry, tint: THREE.Color): THREE.CanvasTexture {
+  const xs = poly.map((p) => p.x);
+  const ys = poly.map((p) => p.y);
+  const x0 = Math.min(...xs) - 0.1;
+  const y0 = Math.min(...ys) - 0.1;
+  const w = Math.max(...xs) + 0.1 - x0;
+  const h = Math.max(...ys) + 0.1 - y0;
+  const ppu = 90;
+  const c = canvasOf(Math.ceil(w * ppu), Math.ceil(h * ppu));
+  const g = c.getContext("2d")!;
+  const trace = (pts: readonly Pt[]) => {
+    g.beginPath();
+    pts.forEach((p, i) => (i ? g.lineTo((p.x - x0) * ppu, (p.y - y0) * ppu) : g.moveTo((p.x - x0) * ppu, (p.y - y0) * ppu)));
+    g.closePath();
+  };
+  const base = `rgb(${Math.round(tint.r * 255)},${Math.round(tint.g * 255)},${Math.round(tint.b * 255)})`;
+  g.fillStyle = base;
+  trace(poly);
+  g.fill();
+  // Baldosas.
+  g.save();
+  trace(poly);
+  g.clip();
+  g.strokeStyle = "rgba(40,30,70,0.17)";
+  g.lineWidth = 1.5;
+  const step = 0.3 * ppu;
+  for (let x = 0; x < c.width; x += step) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, c.height); g.stroke(); }
+  for (let y = 0; y < c.height; y += step) { g.beginPath(); g.moveTo(0, y); g.lineTo(c.width, y); g.stroke(); }
+  g.restore();
+  // Oclusión ambiental: una capa oscura en todo el piso a la que se le «borra» el centro de a poco,
+  // de modo que el borde queda oscuro y el interior claro (degradado suave).
+  const ao = canvasOf(c.width, c.height);
+  const a = ao.getContext("2d")!;
+  const traceOn = (ctx: CanvasRenderingContext2D, pts: readonly Pt[]) => {
+    ctx.beginPath();
+    pts.forEach((p, i) => (i ? ctx.lineTo((p.x - x0) * ppu, (p.y - y0) * ppu) : ctx.moveTo((p.x - x0) * ppu, (p.y - y0) * ppu)));
+    ctx.closePath();
+  };
+  a.fillStyle = "rgba(35,22,60,0.62)";
+  traceOn(a, poly);
+  a.fill();
+  a.globalCompositeOperation = "destination-out";
+  const steps = 18;
+  for (let k = 1; k <= steps; k++) {
+    a.fillStyle = "rgba(0,0,0,0.17)";
+    traceOn(a, offsetPolygon(poly, -k * 0.06));
+    a.fill();
+  }
+  g.drawImage(ao, 0, 0);
+  // UV normalizadas al lienzo.
+  const pos = geo.attributes.position;
+  const uv = new Float32Array(pos.count * 2);
+  for (let k = 0; k < pos.count; k++) {
+    uv[k * 2] = (pos.getX(k) - x0) / w;
+    uv[k * 2 + 1] = 1 - (pos.getZ(k) - y0) / h;
+  }
+  geo.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
+  return t;
+}
+
 function labelTexture(lines: string[], fontWorld: number, deep: string, wWorld: number, hWorld: number): THREE.CanvasTexture {
   const ppu = 150;
   const c = canvasOf(Math.max(8, Math.ceil(wWorld * ppu)), Math.max(8, Math.ceil(hWorld * ppu)));
@@ -193,6 +319,7 @@ interface Pool {
   group: THREE.Group;
   water: THREE.Mesh;
   surface: THREE.Mesh;
+  waterline: THREE.Mesh;
   caustics: THREE.Mesh;
   label: THREE.Mesh;
   /** Copia del nombre sobre la superficie: mantiene el contraste cuando el agua está alta. */
@@ -237,14 +364,27 @@ export class BrainScene {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: "low-power" });
     this.renderer.setClearColor(0x000000, 0);
     this.renderer.toneMapping = THREE.NeutralToneMapping;
-    this.renderer.toneMappingExposure = 1.02;
+    this.renderer.toneMappingExposure = 1.0;
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     const pmrem = new THREE.PMREMGenerator(this.renderer);
     this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
     pmrem.dispose();
-    this.scene.add(new THREE.HemisphereLight(0xffffff, 0xe9dccb, 0.55));
-    const key = new THREE.DirectionalLight(0xfff6ea, 1.5);
-    key.position.set(-5, 11, 6);
+    this.scene.add(new THREE.HemisphereLight(0xffffff, 0xe3d3bf, 0.32));
+    // Luz principal baja y desde atrás a la izquierda: las paredes proyectan sombra hacia adentro de las piletas.
+    const key = new THREE.DirectionalLight(0xfff3e2, 2.3);
+    key.position.set(-6.5, 8.5, -3.5);
+    key.castShadow = true;
+    key.shadow.mapSize.set(2048, 2048);
+    const sc = key.shadow.camera;
+    sc.left = -9; sc.right = 9; sc.top = 9; sc.bottom = -9; sc.near = 1; sc.far = 30;
+    key.shadow.bias = -0.0004;
+    key.shadow.normalBias = 0.03;
     this.scene.add(key);
+    this.scene.add(key.target);
+    const fill = new THREE.DirectionalLight(0xe9eeff, 0.45);
+    fill.position.set(5, 6, 8);
+    this.scene.add(fill);
     this.scene.add(this.root);
   }
 
@@ -369,7 +509,7 @@ export class BrainScene {
     root.add(shadow);
 
     const ceramic = new THREE.MeshPhysicalMaterial({
-      color: CREAM, roughness: 0.42, metalness: 0, clearcoat: 0.55, clearcoatRoughness: 0.28, envMapIntensity: 0.9,
+      color: CREAM, roughness: 0.4, metalness: 0, clearcoat: 0.6, clearcoatRoughness: 0.25, envMapIntensity: 0.55, vertexColors: true,
     });
 
     // Base: toda la silueta, de BASE_H de espesor, con el piso de las piletas arriba (y = 0).
@@ -378,6 +518,9 @@ export class BrainScene {
       ceramic,
     );
     slab.position.y = -(BASE_H + 0.06); // la cara superior queda en y = 0
+    shade(slab.geometry, 0.62, 0.9);
+    slab.castShadow = true;
+    slab.receiveShadow = true;
     root.add(slab);
 
     // Pared (borde): la silueta con un hueco por pileta, con el borde superior redondeado.
@@ -388,6 +531,9 @@ export class BrainScene {
       ceramic,
     );
     rim.position.y = BEVEL;
+    shade(rim.geometry, 0.8, 1.0);
+    rim.castShadow = true;
+    rim.receiveShadow = true;
     root.add(rim);
 
     this.areas.forEach((area, i) => this.buildPool(layout, i, area));
@@ -400,23 +546,21 @@ export class BrainScene {
     this.root.add(group);
     const tint = mix(area.fill, "#ffffff", 0.08);
 
-    // Paredes interiores: se ven desde adentro, más claras arriba y más intensas abajo.
-    const linerGeo = new THREE.ExtrudeGeometry(toShape(offsetPolygon(poly, 0.004)), { depth: TOTAL_H, bevelEnabled: false, curveSegments: 1 }).rotateX(-Math.PI / 2);
-    const pos = linerGeo.attributes.position;
-    const colors = new Float32Array(pos.count * 3);
-    const top = mix(area.fill, "#ffffff", 0.7);
-    const bottom = mix(area.fill, "#ffffff", 0.42);
-    for (let k = 0; k < pos.count; k++) {
-      const c = bottom.clone().lerp(top, clamp01(pos.getY(k) / TOTAL_H));
-      colors.set([c.r, c.g, c.b], k * 3);
-    }
-    linerGeo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
-    group.add(new THREE.Mesh(linerGeo, new THREE.MeshStandardMaterial({ vertexColors: true, side: THREE.BackSide, roughness: 0.5, envMapIntensity: 0.6 })));
+    // Paredes interiores con azulejos: una tira de caras por cada tramo del contorno, más oscura abajo
+    // (rincón del fondo) y más clara arriba. Se ven desde adentro de la pileta.
+    const liner = new THREE.Mesh(
+      linerGeometry(offsetPolygon(poly, 0.004), TOTAL_H, mix(area.fill, "#ffffff", 0.66), 0.62),
+      new THREE.MeshStandardMaterial({ map: this.tiles, vertexColors: true, side: THREE.DoubleSide, roughness: 0.45, envMapIntensity: 0.4 }),
+    );
+    liner.receiveShadow = true;
+    group.add(liner);
 
-    // Piso con baldosas.
+    // Piso: baldosas y oscurecimiento hacia los bordes (oclusión ambiental dibujada).
     const floorGeo = new THREE.ShapeGeometry(toShape(poly), 1).rotateX(-Math.PI / 2);
-    const floor = new THREE.Mesh(floorGeo, new THREE.MeshStandardMaterial({ map: this.tiles, color: tint, roughness: 0.55, envMapIntensity: 0.5 }));
+    const fl = floorTexture(poly, floorGeo, mix(area.fill, "#ffffff", 0.7));
+    const floor = new THREE.Mesh(floorGeo, new THREE.MeshStandardMaterial({ map: fl, roughness: 0.5, envMapIntensity: 0.35 }));
     floor.position.y = 0.004;
+    floor.receiveShadow = true;
     group.add(floor);
 
     // Red de luz sobre el piso (solo con agua).
@@ -440,8 +584,8 @@ export class BrainScene {
     // Agua: volumen (de piso a superficie) escalado en altura, más una hoja con ondas arriba.
     const inset = offsetPolygon(poly, -0.012);
     const waterMat = new THREE.MeshPhysicalMaterial({
-      color: mix(area.fill, area.deep, 0.5), transparent: true, opacity: 0.6, roughness: 0.1, metalness: 0,
-      clearcoat: 1, clearcoatRoughness: 0.06, envMapIntensity: 0.85, depthWrite: false,
+      color: mix(area.fill, area.deep, 0.55), transparent: true, opacity: 0.5, roughness: 0.08, metalness: 0,
+      clearcoat: 1, clearcoatRoughness: 0.05, envMapIntensity: 0.7, depthWrite: false, side: THREE.DoubleSide,
       normalMap: this.ripple, normalScale: new THREE.Vector2(0.18, 0.18),
     });
     const water = new THREE.Mesh(new THREE.ExtrudeGeometry(toShape(inset), { depth: 1, bevelEnabled: false, curveSegments: 1 }).rotateX(-Math.PI / 2), waterMat);
@@ -453,6 +597,13 @@ export class BrainScene {
     );
     surface.renderOrder = 4;
     group.add(surface);
+    // Línea de flotación: un fino borde claro donde el agua toca la pared; hace visible el nivel.
+    const waterline = new THREE.Mesh(
+      stripGeometry(inset, offsetPolygon(inset, -0.07)),
+      new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.6, depthWrite: false, toneMapped: false, side: THREE.DoubleSide }),
+    );
+    waterline.renderOrder = 6;
+    group.add(waterline);
 
     // Zona de toque.
     const hit = new THREE.Mesh(new THREE.ShapeGeometry(toShape(poly), 1).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ visible: false }));
@@ -461,14 +612,14 @@ export class BrainScene {
     group.add(hit);
 
     // Contorno de selección sobre la cara plana del borde.
-    const ringShape = toShape(offsetPolygon(poly, BEVEL + 0.07));
+    const ringShape = toShape(offsetPolygon(poly, BEVEL + 0.06));
     ringShape.holes.push(toPath(offsetPolygon(poly, BEVEL + 0.025)));
-    const ring = new THREE.Mesh(new THREE.ShapeGeometry(ringShape, 1).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x6a4fb3, toneMapped: false }));
+    const ring = new THREE.Mesh(new THREE.ShapeGeometry(ringShape, 1).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x8a70d4, toneMapped: false }));
     ring.position.y = TOTAL_H + BEVEL * 0.02 + 0.004;
     ring.visible = area.id === this.selected;
     group.add(ring);
 
-    const pool: Pool = { id: area.id, name: "", deep: "", poly, group, water, surface, caustics, label, labelTop, hit, ring, current: this.reduce ? clamp01(area.level) : 0, target: clamp01(area.level) };
+    const pool: Pool = { id: area.id, name: "", deep: "", poly, group, water, surface, waterline, caustics, label, labelTop, hit, ring, current: this.reduce ? clamp01(area.level) : 0, target: clamp01(area.level) };
     this.pools.push(pool);
     this.enqueueLabel(pool, area);
     this.applyLevel(pool);
@@ -537,6 +688,8 @@ export class BrainScene {
     const has = p.current > 0.004;
     p.water.visible = has;
     p.surface.visible = has;
+    p.waterline.visible = has;
+    p.waterline.position.y = h + 0.006;
     p.caustics.visible = has;
     p.water.scale.y = Math.max(h, 1e-4);
     p.surface.position.y = h + 0.003;
@@ -544,8 +697,11 @@ export class BrainScene {
     // Más alto y más cerca de la cámara: así se proyecta justo sobre el nombre del fondo (sin verse doble).
     p.labelTop.position.z = ((p.labelTop.userData.baseZ as number | undefined) ?? 0) + h / Math.tan(TILT);
     (p.labelTop.material as THREE.MeshBasicMaterial).opacity = has ? 0.82 * Math.min(1, Math.max(0, (p.current - 0.15) / 0.5)) : 0;
-    (p.water.material as THREE.MeshPhysicalMaterial).opacity = 0.55 + 0.38 * p.current;
-    (p.caustics.material as THREE.MeshBasicMaterial).opacity = 0.22 + 0.2 * (1 - p.current);
+    (p.water.material as THREE.MeshPhysicalMaterial).opacity = 0.14 + 0.72 * p.current;
+    // Las cáusticas y la hoja de ondas solo existen con agua: casi sin agua, el fondo se ve limpio.
+    const wet = Math.min(1, Math.max(0, (p.current - 0.04) / 0.3));
+    (p.caustics.material as THREE.MeshBasicMaterial).opacity = 0.34 * wet;
+    (p.surface.material as THREE.MeshPhysicalMaterial).opacity = 0.14 * wet;
     if (p.floating) p.floating.position.y = h + 0.02;
   }
 
@@ -598,7 +754,9 @@ export class BrainScene {
     // Plantas sobre el borde, donde la pared tiene espacio.
     const leaf = new THREE.MeshStandardMaterial({ color: 0x5fb98a, roughness: 0.55, side: THREE.DoubleSide });
     const leaf2 = new THREE.MeshStandardMaterial({ color: 0x3f9a6e, roughness: 0.55, side: THREE.DoubleSide });
-    layout.rimSpots.slice(0, 3).forEach((s, i) => {
+    // Solo en el borde trasero: así ningún adorno tapa una pileta.
+    const midY = (layout.bounds.minY + layout.bounds.maxY) / 2;
+    layout.rimSpots.filter((r) => r.y < midY).slice(0, 3).forEach((s, i) => {
       const g = new THREE.Group();
       const pot = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.15, 0.22, 16), new THREE.MeshStandardMaterial({ color: 0xf2e7d5, roughness: 0.5 }));
       pot.position.y = 0.11;
@@ -736,7 +894,7 @@ function frameCorners(b: BrainLayout["bounds"]): [number, number, number][] {
   const out: [number, number, number][] = [];
   for (const x of [b.minX, b.maxX]) for (const z of [b.minY, b.maxY]) for (const y of [-BASE_H, TOTAL_H + 0.7]) out.push([x, y, z]);
   // Sombra: corrida hacia la derecha y adelante, con su difuminado.
-  for (const x of [b.minX - 0.4, b.maxX + 1.0]) for (const z of [b.minY - 0.2, b.maxY + 1.05]) out.push([x, -BASE_H, z]);
+  for (const x of [b.minX - 0.15, b.maxX + 0.7]) for (const z of [b.minY - 0.1, b.maxY + 0.75]) out.push([x, -BASE_H, z]);
   return out;
 }
 

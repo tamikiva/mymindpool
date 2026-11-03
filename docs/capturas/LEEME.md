@@ -11,3 +11,4 @@ Generadas por `npm run ui-check` en Chromium (390 px y 1200 px) con **datos simu
 - `8`–`13` — Rutinas: lista vacía, editor con plantilla sugerida, lista, ejecución de un paso, secuencia completa y cierre
 - `14`–`17` — Mi día: pregunta de áreas, edición con aviso de tiempo, plan y cierre
 - `18`–`20` — Tareas repetidas: editor, lista y repeticiones dentro de Tareas
+- `1c-niveles-extremos.png` (lienzo a doble resolución) y `1c-niveles-extremos-pantalla.png` — Casa casi vacía (1 %) y Trabajo casi llena (88 %): se ve la diferencia de nivel
