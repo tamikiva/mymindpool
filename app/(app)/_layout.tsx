@@ -16,6 +16,7 @@ export default function AppLayout() {
       }}
     >
       <Tabs.Screen name="equilibrio" options={{ title: "Equilibrio" }} />
+      <Tabs.Screen name="dia" options={{ title: "Mi día" }} />
       <Tabs.Screen name="tareas" options={{ title: "Tareas" }} />
       <Tabs.Screen name="rutinas" options={{ title: "Rutinas" }} />
       <Tabs.Screen name="rutina/[id]" options={{ href: null }} />

@@ -70,9 +70,11 @@ function freshState(areaNames) {
   ].filter((t) => areas.some((a) => a.id === t.area_id));
   // Con muchas áreas, cargas variadas para ver distintos niveles de agua.
   areas.slice(4).forEach((a, i) => tasks.push(mkTask("x" + i, a.id, "Pendiente " + a.name, { weight: ((i % 3) + 1) })));
-  return { areas, tasks, failNextWrite: false, n: 10, templates: [], tsteps: [], runs: [], rsteps: [], rid: 0 };
+  return { areas, tasks, failNextWrite: false, n: 10, templates: [], tsteps: [], runs: [], rsteps: [], rid: 0, plans: {} };
 }
 
+const NO_ROWS = { code: "PGRST116", details: "The result contains 0 rows", message: "JSON object requested, multiple (or no) rows returned" };
+const one = (rows) => (rows[0] ? { status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: JSON.stringify(rows[0]) } : { status: 406, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: JSON.stringify(NO_ROWS) });
 const json = (body, status = 200) => ({ status, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: status === 204 ? "" : JSON.stringify(body) });
 
 async function installApi(ctx, st) {
@@ -102,6 +104,30 @@ async function installApi(ctx, st) {
       if (u.pathname.endsWith("/undo_complete_task") && t && t.status === "completed") { t.status = "pending"; t.completed_at = null; }
       return route.fulfill(json(null));
     }
+    if (u.pathname === "/rest/v1/day_plans") {
+      const d = q("plan_date")?.replace("eq.", "");
+      const pl = st.plans[d];
+      const rows = pl ? [{ id: pl.id, plan_date: d, available_minutes: pl.available_minutes, closed_at: pl.closed_at }] : [];
+      return route.fulfill((req.headers()["accept"] ?? "").includes("vnd.pgrst.object") ? one(rows) : json(rows));
+    }
+    if (u.pathname === "/rest/v1/day_plan_areas" || u.pathname === "/rest/v1/day_plan_items") {
+      const pl = Object.values(st.plans).find((x) => x.id === q("plan_id")?.replace("eq.", ""));
+      return route.fulfill(json(pl ? (u.pathname.endsWith("areas") ? pl.areas : pl.items) : []));
+    }
+    if (u.pathname.endsWith("/rpc/save_day_plan") || u.pathname.endsWith("/rpc/close_day_plan")) {
+      const b = JSON.parse(req.postData());
+      if (st.failNextWrite) { st.failNextWrite = false; return route.fulfill(json({ message: "boom", code: "XX000" }, 500)); }
+      if (u.pathname.endsWith("save_day_plan")) {
+        const pl = (st.plans[b.p_date] ??= { id: "plan" + ++st.rid, closed_at: null });
+        Object.assign(pl, { available_minutes: b.p_available, areas: b.p_areas.map((a) => ({ area_id: a.area_id, moment: a.moment, planned_minutes: a.planned_minutes })), items: b.p_items.map((x, i) => ({ task_id: x.kind === "task" ? x.id : null, routine_template_id: x.kind === "routine" ? x.id : null, position: i })) });
+        return route.fulfill(json(pl.id));
+      }
+      const pl = st.plans[b.p_date];
+      pl.closed_at = new Date().toISOString();
+      const tomorrow = new Date(new Date(b.p_date + "T00:00:00Z").getTime() + 86400000).toISOString().slice(0, 10);
+      b.p_carry_task_ids.forEach((id) => { const t = st.tasks.find((x) => x.id === id); if (t && t.status === "pending") t.scheduled_date = tomorrow; });
+      return route.fulfill(json(null));
+    }
     if (u.pathname === "/rest/v1/routine_templates") return route.fulfill(json(st.templates.filter((t) => !t.archived)));
     if (u.pathname === "/rest/v1/routine_template_steps") return route.fulfill(json(st.tsteps));
     if (u.pathname === "/rest/v1/routine_runs") {
@@ -110,7 +136,7 @@ async function installApi(ctx, st) {
       const sv = q("status");
       if (sv?.startsWith("in.")) rows = rows.filter((r) => sv.slice(4, -1).split(",").includes(r.status));
       if (q("id")) rows = rows.filter((r) => r.id === q("id").replace("eq.", ""));
-      return route.fulfill(json(single ? (rows[0] ?? null) : rows, single && !rows[0] ? 406 : 200));
+      return route.fulfill(single ? one(rows) : json(rows));
     }
     if (u.pathname === "/rest/v1/routine_run_steps") {
       let rows = st.rsteps;
@@ -176,9 +202,11 @@ async function installApi(ctx, st) {
       const sv = q("status");
       if (sv?.startsWith("in.")) rows = rows.filter((t) => sv.slice(4, -1).split(",").includes(t.status));
       if (sv?.startsWith("eq.")) rows = rows.filter((t) => t.status === sv.slice(3));
-      if (q("id")) rows = rows.filter((t) => t.id === q("id").replace("eq.", ""));
+      const idv = q("id");
+      if (idv?.startsWith("in.")) rows = rows.filter((t) => idv.slice(4, -1).split(",").includes(t.id));
+      else if (idv) rows = rows.filter((t) => t.id === idv.replace("eq.", ""));
       const single = (req.headers()["accept"] ?? "").includes("vnd.pgrst.object");
-      return route.fulfill(json(single ? (rows[0] ?? null) : rows, single && !rows[0] ? 406 : 200));
+      return route.fulfill(single ? one(rows) : json(rows));
     }
     return route.fulfill(json([]));
   });
@@ -448,6 +476,103 @@ async function routines() {
   await ctx.close();
 }
 
+// ---------- 1c. Mi día ----------
+async function dayPlan() {
+  const st = freshState();
+  const { ctx, page } = await newPage({ st });
+  await page.goto(`${BASE}/dia`);
+  await page.getByText("¿Qué áreas querés atender hoy?").waitFor({ timeout: 20000 });
+  check("Mi día sin plan: pregunta por las áreas y no impone ninguna", (await body(page)).includes("No hace falta atenderlas todas"));
+  await shot(page, "14-dia-vacio");
+
+  await page.getByRole("button", { name: "Guardar mi día" }).click();
+  await page.getByText("Elegí al menos un área para hoy.").waitFor({ timeout: 3000 });
+  check("Guardar sin áreas muestra el error y no guarda", Object.keys(st.plans).length === 0);
+
+  await page.getByRole("checkbox", { name: "Casa" }).click();
+  await page.getByRole("checkbox", { name: "Trabajo" }).click();
+  check("Las áreas elegidas se marcan con texto (✓), no solo con color", (await page.getByRole("checkbox", { name: "Casa" }).getAttribute("aria-checked")) === "true");
+  await page.getByLabel("Minutos para Casa (opcional)").fill("240");
+  await page.getByLabel("Minutos para Trabajo (opcional)").fill("120");
+  await page.getByLabel("Tiempo disponible hoy, en minutos (opcional)").fill("300");
+  await page.getByText("supera lo que tenés disponible por 60 min").waitFor({ timeout: 3000 });
+  check("Si el plan supera el tiempo declarado avisa, sin bloquear el guardado", (await body(page)).includes("es tu decisión") && (await page.getByRole("button", { name: "Guardar mi día" }).evaluate((e) => !e.disabled)));
+  await page.getByLabel("Minutos para Trabajo (opcional)").fill("abc");
+  await page.getByRole("button", { name: "Guardar mi día" }).click();
+  await page.getByText("Usá minutos, con números enteros").first().waitFor({ timeout: 3000 });
+  check("Minutos inválidos se marcan y no guardan", Object.keys(st.plans).length === 0);
+  await page.getByLabel("Minutos para Trabajo (opcional)").fill("120");
+
+  await page.getByRole("radio", { name: "Mañana", exact: true }).first().click();
+  await page.getByRole("checkbox", { name: "Lavar los platos" }).click();
+  await page.getByRole("checkbox", { name: "Informe mensual" }).click();
+  check("Solo se ofrecen tareas de las áreas elegidas (no la de Salud)", (await page.getByRole("checkbox", { name: "Turno con la médica" }).count()) === 0);
+  await shot(page, "15-dia-editar");
+
+  st.failNextWrite = true;
+  await page.getByRole("button", { name: "Guardar mi día" }).click();
+  await page.getByText("Algo no salió como esperábamos").waitFor({ timeout: 5000 });
+  check("Un fallo al guardar conserva lo elegido", (await page.getByLabel("Minutos para Casa (opcional)").inputValue()) === "240" && Object.keys(st.plans).length === 0);
+  await page.getByRole("button", { name: "Guardar mi día" }).click();
+  await page.getByRole("button", { name: "Completar Lavar los platos" }).waitFor({ timeout: 8000 });
+  const plan = Object.values(st.plans)[0];
+  check("Reintentar guarda un solo plan con 2 áreas y 2 tareas", Object.keys(st.plans).length === 1 && plan.areas.length === 2 && plan.items.length === 2);
+  await shot(page, "16-dia-plan");
+
+  let t = await body(page);
+  check("El plan muestra áreas con momento y minutos", t.includes("Mañana") && t.includes("240 min"));
+  await page.getByRole("button", { name: "Completar Lavar los platos" }).click();
+  await page.getByRole("button", { name: "Deshacer Lavar los platos" }).waitFor({ timeout: 5000 });
+  check("Completar una tarea del plan la marca con ✓", (await body(page)).includes("✓ Lavar los platos") && st.tasks.find((x) => x.id === "t1").status === "completed");
+
+  // Editar: quitar un área quita sus tareas
+  await page.getByRole("button", { name: "Editar mi plan" }).click();
+  await page.getByRole("checkbox", { name: "Trabajo" }).click();
+  await page.getByRole("button", { name: "Guardar mi día" }).click();
+  await page.getByText("1 de 1 tareas del plan resueltas").waitFor({ timeout: 8000 }).catch(() => {});
+  const plan2 = Object.values(st.plans)[0];
+  check("Quitar un área del plan quita también sus tareas", plan2.areas.length === 1 && plan2.items.length === 1);
+
+  // Volver a agregar Trabajo y su tarea para cerrar con algo pendiente
+  await page.getByRole("button", { name: "Editar mi plan" }).click();
+  await page.getByRole("checkbox", { name: "Trabajo" }).click();
+  await page.getByRole("checkbox", { name: "Informe mensual" }).click();
+  await page.getByRole("button", { name: "Guardar mi día" }).click();
+  await page.getByRole("button", { name: "Completar Informe mensual" }).waitFor({ timeout: 8000 });
+
+  // Cierre: solo se traslada lo elegido
+  await page.getByRole("button", { name: "Cerrar el día", exact: true }).click();
+  await page.getByText("no se mueve nada solo").waitFor({ timeout: 5000 });
+  check("Cierre: ofrece solo las tareas sin resolver", await page.getByRole("checkbox", { name: "Lavar los platos" }).count() === 0 && await page.getByRole("checkbox", { name: "Informe mensual" }).count() === 1);
+  await shot(page, "17-dia-cierre");
+  await page.getByRole("button", { name: "Cerrar el día", exact: true }).click();
+  await page.getByText("Cerraste este día").waitFor({ timeout: 8000 });
+  check("Cerrar sin elegir no mueve ninguna tarea", st.tasks.find((x) => x.id === "t3").scheduled_date === null);
+  check("Día cerrado: ya no se puede editar ni cerrar de nuevo", (await page.getByRole("button", { name: "Editar mi plan" }).count()) === 0);
+  await axe(page, "Mi día (plan cerrado)");
+  await ctx.close();
+
+  // Cierre con traslado elegido
+  const st2 = freshState();
+  const b = await newPage({ st: st2 });
+  await b.page.goto(`${BASE}/dia`);
+  await b.page.getByText("¿Qué áreas querés atender hoy?").waitFor({ timeout: 20000 });
+  await b.page.getByRole("checkbox", { name: "Trabajo" }).click();
+  await b.page.getByRole("checkbox", { name: "Informe mensual" }).click();
+  await axe(b.page, "Mi día (editar)");
+  await b.page.getByRole("button", { name: "Guardar mi día" }).click();
+  await b.page.getByRole("button", { name: "Completar Informe mensual" }).waitFor({ timeout: 8000 });
+  await axe(b.page, "Mi día (plan)");
+  await b.page.getByRole("button", { name: "Cerrar el día", exact: true }).click();
+  await b.page.getByRole("checkbox", { name: "Informe mensual" }).click();
+  await b.page.getByRole("button", { name: "Cerrar el día", exact: true }).click();
+  await b.page.getByText("Cerraste este día").waitFor({ timeout: 8000 });
+  const tomorrow = new Date(Date.now() + 86400000).toLocaleDateString("sv-SE");
+  check("Cierre: la tarea elegida pasa a mañana", st2.tasks.find((x) => x.id === "t3").scheduled_date === tomorrow);
+  check("Cierre: las no elegidas quedan como estaban", st2.tasks.find((x) => x.id === "t1").scheduled_date === TODAY);
+  await b.ctx.close();
+}
+
 // ---------- 2. Teclado y accesibilidad ----------
 async function keyboardAndA11y() {
   const st = freshState();
@@ -599,7 +724,7 @@ async function brainCounts() {
 }
 
 // ---------- ejecución ----------
-for (const [name, fn] of [["Recorridos", flows], ["Rutinas", routines], ["Teclado y accesibilidad", keyboardAndA11y], ["Movimiento", motion], ["Cerebro 2 y 8 áreas", brainCounts]]) {
+for (const [name, fn] of [["Recorridos", flows], ["Rutinas", routines], ["Mi día", dayPlan], ["Teclado y accesibilidad", keyboardAndA11y], ["Movimiento", motion], ["Cerebro 2 y 8 áreas", brainCounts]]) {
   console.log(`\n== ${name}`);
   const before = results.length;
   try { await fn(); } catch (e) { check(`${name}: el recorrido terminó sin excepción`, false, String(e.message).split("\n")[0]); }
