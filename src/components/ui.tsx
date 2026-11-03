@@ -68,7 +68,7 @@ export function Center({ children }: { children: ReactNode }) {
 
 const s = StyleSheet.create({
   screen: { padding: 20, gap: 14, width: "100%", maxWidth: 520, alignSelf: "center", flexGrow: 1, justifyContent: "center" },
-  title: { fontSize: 30, fontWeight: "800", color: palette.text, lineHeight: 36 },
+  title: { fontSize: 26, fontWeight: "800", color: palette.text, lineHeight: 32 },
   body: { fontSize: 16, lineHeight: 23, color: palette.textMuted },
   btn: { minHeight: 48, borderRadius: 24, backgroundColor: palette.primary, alignItems: "center", justifyContent: "center", paddingHorizontal: 20 },
   btnGhost: { backgroundColor: "transparent", borderWidth: 1.5, borderColor: palette.primary },

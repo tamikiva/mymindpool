@@ -181,15 +181,14 @@ export default function Equilibrio() {
             onPress={() => setPicked(suggestion.areaId)}
             style={s.suggestMain}
           >
-            <View style={s.suggestIcon}><SproutIcon /></View>
+            <View style={s.suggestIcon}><SproutIcon size={22} /></View>
             <View style={{ flex: 1 }}>
-              <Text style={s.strong}>{suggestion.headline}</Text>
-              <Text style={[s.lead, { color: "#2C6B52" }]}>{suggestion.reason}</Text>
+              <Text style={s.strongSm}>{suggestion.headline}</Text>
+              <Text style={s.reason}>{suggestion.reason}</Text>
             </View>
-            <ChevronIcon color="#2C6B52" />
           </Pressable>
-          <Pressable role="button" accessibilityLabel="Ahora no" onPress={() => setDismissed(true)} style={s.dismiss}>
-            <Text style={s.dismissText}>Ahora no</Text>
+          <Pressable role="button" accessibilityLabel="Ahora no" onPress={() => setDismissed(true)} style={s.dismissX}>
+            <Text style={s.dismissText}>✕</Text>
           </Pressable>
         </View>
       ) : null}
@@ -283,26 +282,28 @@ export default function Equilibrio() {
 }
 
 const s = StyleSheet.create({
-  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", minHeight: 48 },
+  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", minHeight: 44 },
   brand: { flexDirection: "row", alignItems: "center", gap: 10 },
-  brandText: { fontSize: 26, fontWeight: "800", color: palette.text },
-  gear: { width: 48, height: 48, alignItems: "center", justifyContent: "center", borderRadius: 24 },
+  brandText: { fontSize: 22, fontWeight: "800", color: palette.text },
+  gear: { width: 44, height: 44, alignItems: "center", justifyContent: "center", borderRadius: 24 },
   cols: { flexDirection: "row", gap: 28, alignItems: "flex-start" },
-  colMain: { flex: 1.5, gap: 14 },
+  colMain: { flex: 1.5, gap: 8 },
   colSide: { flex: 1, minWidth: 340, maxWidth: 440 },
-  side: { gap: 14 },
+  side: { gap: 10 },
   lead: { fontSize: 16, lineHeight: 22, color: palette.textMuted },
-  card: { ...card, padding: 16, gap: 12 },
+  card: { ...card, padding: 14, gap: 10 },
   rowBetween: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" },
   strong: { fontSize: 17, fontWeight: "800", color: palette.text },
-  suggest: { backgroundColor: "#E8F6EE", borderRadius: 22, padding: 6 },
-  suggestMain: { flexDirection: "row", alignItems: "center", gap: 14, padding: 12, minHeight: 64 },
-  suggestIcon: { width: 52, height: 52, borderRadius: 26, backgroundColor: "#D8EFE3", alignItems: "center", justifyContent: "center" },
-  dismiss: { alignSelf: "flex-end", minHeight: 44, paddingHorizontal: 14, justifyContent: "center" },
-  dismissText: { color: "#2C6B52", fontSize: 14, fontWeight: "700" },
+  suggest: { backgroundColor: "#E8F6EE", borderRadius: 18 },
+  suggestMain: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 10, paddingLeft: 10, paddingRight: 40 },
+  suggestIcon: { width: 38, height: 38, borderRadius: 19, backgroundColor: "#D8EFE3", alignItems: "center", justifyContent: "center" },
+  strongSm: { fontSize: 15, fontWeight: "800", color: palette.text, lineHeight: 20 },
+  reason: { fontSize: 13.5, lineHeight: 18, color: "#2C6B52" },
+  dismissX: { position: "absolute", top: 0, right: 0, width: 44, height: 44, alignItems: "center", justifyContent: "center" },
+  dismissText: { color: "#2C6B52", fontSize: 15, fontWeight: "800" },
   areaHead: { flexDirection: "row", alignItems: "center", gap: 12 },
-  areaDot: { width: 44, height: 44, borderRadius: 22 },
-  areaName: { fontSize: 24, fontWeight: "800", color: palette.text },
+  areaDot: { width: 34, height: 34, borderRadius: 17 },
+  areaName: { fontSize: 20, fontWeight: "800", color: palette.text, lineHeight: 24 },
   link: { color: palette.primary, fontSize: 15, fontWeight: "700", paddingVertical: 8 },
   taskRow: { flexDirection: "row", alignItems: "center", gap: 6, borderWidth: 1, borderColor: palette.border, borderRadius: 18, paddingVertical: 4, paddingLeft: 4, paddingRight: 8, backgroundColor: "#FFFDFB" },
   check: { width: 48, height: 48, alignItems: "center", justifyContent: "center" },

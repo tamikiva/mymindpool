@@ -1,13 +1,13 @@
 /** Medidas de la escena 3D, compartidas por la escena (three.js) y por las pruebas de ubicación. */
 
 /** Altura de la parte recta de la pared, bisel y alto total (unidades del mundo). */
-export const DEPTH = 0.6;
-export const BEVEL = 0.1;
+export const DEPTH = 0.82;
+export const BEVEL = 0.08;
 export const TOTAL_H = DEPTH + 2 * BEVEL;
 /** Espesor de la base bajo el piso de las piletas. */
-export const BASE_H = 0.6;
+export const BASE_H = 0.3;
 /** Inclinación de la cámara respecto del plano horizontal (más alta = más desde arriba). */
-export const TILT = (52 * Math.PI) / 180;
+export const TILT = (46 * Math.PI) / 180;
 export const FOV = 28;
 /** Franja del piso que tapa la pared cercana: alto de la pared / tan(inclinación), con un poco de aire. */
 export const OCCLUSION = TOTAL_H / Math.tan(TILT) + 0.06;

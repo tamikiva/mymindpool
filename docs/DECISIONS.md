@@ -89,3 +89,11 @@ Tras comparar con la referencia (ver `docs/ESPECIFICACION_MODELO_3D.md` §2) se 
 - Los adornos no cambian, salvo que las plantas van solo en el borde trasero.
 **Pendiente:** adaptar esto a 2–8 áreas (los garantías de nombres y las pruebas de ubicación de nombres solo están medidas para 4; ver `it.todo`). **Sigue faltando respecto de la referencia:** silueta con lóbulos finos, escalones, texturas de azulejo con relieve, refracción real y cáusticas de luz con detalle.
 
+## D-019 · Laboratorio de una pileta y paredes finas (2026-11-03)
+Tras la devolución («bordes demasiado anchos respecto del agua, falta profundidad interior») se evaluó la geometría con **una sola pileta, sin adornos, al 0 %, 50 % y 100 %, con la misma cámara y encuadre** (`npm run brain-lab`, `scripts/brain3d-lab`; la escena acepta `layout` y `props: false`). Cambios, ya aplicados al cerebro de 4 áreas:
+- **Una sola pared continua** desde la base hasta el borde (antes «base» + «borde» con una junta que se leía como un escalón ancho); placas de fondo dentro de cada hueco.
+- Paredes más finas (≈ 0,2–0,3 de espesor: borde exterior `RIM` 0,17, entre piletas `WALL` 0,30) y más profundas (0,82 + bisel 0,08); cámara a 46°.
+- **El nivel se lee contra la pared:** el agua tiñe la pared interior hasta el nivel con un corte limpio (además de la línea de flotación, el color y las ondas). Pared interior con azulejos más marcados y más oscura hacia el fondo.
+- Las plantas desaparecen por ahora (con paredes finas no hay lugar en el borde); quedan flotadores y escalera.
+**Sigue pendiente:** la silueta no se reconoce como cerebro (lóbulos finos; no se tocó en esta pasada), 2–8 áreas, y evaluar si hace falta el recurso externo. Móvil: tarjeta de sugerencia y leyenda compactas; se ven 3 tareas sin desplazarse en 390×844 (verificado por `ui-check`).
+

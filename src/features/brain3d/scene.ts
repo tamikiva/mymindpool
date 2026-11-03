@@ -88,7 +88,7 @@ function tileTexture(): THREE.CanvasTexture {
       g.fillRect(i * 64 + 2, j * 64 + 2, 60, 60);
     }
   }
-  g.strokeStyle = "rgba(60,40,90,0.16)";
+  g.strokeStyle = "rgba(60,40,90,0.3)";
   g.lineWidth = 3;
   for (let k = 0; k <= 256; k += 64) {
     g.beginPath(); g.moveTo(k, 0); g.lineTo(k, 256); g.stroke();
@@ -320,6 +320,7 @@ interface Pool {
   water: THREE.Mesh;
   surface: THREE.Mesh;
   waterline: THREE.Mesh;
+  wallWater: THREE.Mesh;
   caustics: THREE.Mesh;
   label: THREE.Mesh;
   /** Copia del nombre sobre la superficie: mantiene el contraste cuando el agua está alta. */
@@ -330,6 +331,13 @@ interface Pool {
   floating?: THREE.Object3D;
   current: number;
   target: number;
+}
+
+export interface SceneOptions {
+  /** false = sin plantas, flotadores ni escalera (para evaluar solo la geometría). */
+  props?: boolean;
+  /** Geometría a usar en lugar de la generada por cantidad de áreas (pruebas). */
+  layout?: BrainLayout;
 }
 
 export class BrainScene {
@@ -360,7 +368,7 @@ export class BrainScene {
   private propsAdded = false;
   private idleClock = 0;
 
-  constructor(private readonly canvas: HTMLCanvasElement) {
+  constructor(private readonly canvas: HTMLCanvasElement, private readonly opts: SceneOptions = {}) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: "low-power" });
     this.renderer.setClearColor(0x000000, 0);
     this.renderer.toneMapping = THREE.NeutralToneMapping;
@@ -442,8 +450,8 @@ export class BrainScene {
   }
 
   /** Relación alto/ancho que encuadra la escena con la cámara real (perspectiva, inclinada). */
-  static aspectFor(count: number): number {
-    const b = buildBrainLayout(count).bounds;
+  static aspectFor(count: number, layout?: BrainLayout): number {
+    const b = (layout ?? buildBrainLayout(count)).bounds;
     const cam = new THREE.PerspectiveCamera(FOV, 1, 0.1, 400);
     const target = new THREE.Vector3((b.minX + b.maxX) / 2, 0.1, (b.minY + b.maxY) / 2 + 0.15);
     cam.position.copy(target).add(new THREE.Vector3(0, Math.sin(TILT), Math.cos(TILT)).multiplyScalar(40));
@@ -494,7 +502,7 @@ export class BrainScene {
     this.propsAdded = false;
     delete this.canvas.dataset.ready;
     this.clearRoot();
-    const layout = buildBrainLayout(this.areas.length);
+    const layout = this.opts.layout ?? buildBrainLayout(this.areas.length);
     this.layout = layout;
     const root = this.root;
 
@@ -512,29 +520,26 @@ export class BrainScene {
       color: CREAM, roughness: 0.4, metalness: 0, clearcoat: 0.6, clearcoatRoughness: 0.25, envMapIntensity: 0.55, vertexColors: true,
     });
 
-    // Base: toda la silueta, de BASE_H de espesor, con el piso de las piletas arriba (y = 0).
-    const slab = new THREE.Mesh(
-      new THREE.ExtrudeGeometry(toShape(layout.outline), { depth: BASE_H, bevelEnabled: true, bevelThickness: 0.06, bevelSize: 0.06, bevelOffset: -0.06, bevelSegments: 4, curveSegments: 1 }).rotateX(-Math.PI / 2),
-      ceramic,
-    );
-    slab.position.y = -(BASE_H + 0.06); // la cara superior queda en y = 0
-    shade(slab.geometry, 0.62, 0.9);
-    slab.castShadow = true;
-    slab.receiveShadow = true;
-    root.add(slab);
-
-    // Pared (borde): la silueta con un hueco por pileta, con el borde superior redondeado.
+    // Pared continua: desde la base hasta el borde superior redondeado, con un hueco por pileta.
+    // (Una sola pieza: sin junta entre «base» y «borde», que se leía como un escalón ancho.)
     const rimShape = toShape(layout.outline);
     layout.pools.forEach((p) => rimShape.holes.push(toPath(p.poly)));
     const rim = new THREE.Mesh(
-      new THREE.ExtrudeGeometry(rimShape, { depth: DEPTH, bevelEnabled: true, bevelThickness: BEVEL, bevelSize: BEVEL, bevelOffset: -BEVEL, bevelSegments: 6, curveSegments: 1 }).rotateX(-Math.PI / 2),
+      new THREE.ExtrudeGeometry(rimShape, { depth: DEPTH + BASE_H, bevelEnabled: true, bevelThickness: BEVEL, bevelSize: BEVEL, bevelOffset: -BEVEL, bevelSegments: 6, curveSegments: 1 }).rotateX(-Math.PI / 2),
       ceramic,
     );
-    rim.position.y = BEVEL;
-    shade(rim.geometry, 0.8, 1.0);
+    rim.position.y = BEVEL - BASE_H; // la base queda en y = -BASE_H y el piso de las piletas en y = 0
+    shade(rim.geometry, 0.6, 1.0);
     rim.castShadow = true;
     rim.receiveShadow = true;
     root.add(rim);
+    // Placa del fondo de cada pileta (cierra el hueco por debajo del piso).
+    layout.pools.forEach((p) => {
+      const plate = new THREE.Mesh(new THREE.ExtrudeGeometry(toShape(p.poly), { depth: BASE_H, bevelEnabled: false, curveSegments: 1 }).rotateX(-Math.PI / 2), ceramic);
+      plate.position.y = -BASE_H;
+      shade(plate.geometry, 0.6, 0.7);
+      root.add(plate);
+    });
 
     this.areas.forEach((area, i) => this.buildPool(layout, i, area));
     this.fit();
@@ -549,7 +554,7 @@ export class BrainScene {
     // Paredes interiores con azulejos: una tira de caras por cada tramo del contorno, más oscura abajo
     // (rincón del fondo) y más clara arriba. Se ven desde adentro de la pileta.
     const liner = new THREE.Mesh(
-      linerGeometry(offsetPolygon(poly, 0.004), TOTAL_H, mix(area.fill, "#ffffff", 0.66), 0.62),
+      linerGeometry(offsetPolygon(poly, 0.004), TOTAL_H, mix(area.fill, "#ffffff", 0.66), 0.38),
       new THREE.MeshStandardMaterial({ map: this.tiles, vertexColors: true, side: THREE.DoubleSide, roughness: 0.45, envMapIntensity: 0.4 }),
     );
     liner.receiveShadow = true;
@@ -597,9 +602,16 @@ export class BrainScene {
     );
     surface.renderOrder = 4;
     group.add(surface);
+    // Tinte del agua sobre la pared interior: llega exactamente hasta el nivel, con un corte limpio.
+    const wallWater = new THREE.Mesh(
+      linerGeometry(offsetPolygon(poly, -0.006), 1, new THREE.Color(1, 1, 1), 1),
+      new THREE.MeshBasicMaterial({ color: mix(area.fill, area.deep, 0.5), transparent: true, opacity: 0.55, depthWrite: false, side: THREE.DoubleSide, toneMapped: false }),
+    );
+    wallWater.renderOrder = 3;
+    group.add(wallWater);
     // Línea de flotación: un fino borde claro donde el agua toca la pared; hace visible el nivel.
     const waterline = new THREE.Mesh(
-      stripGeometry(inset, offsetPolygon(inset, -0.07)),
+      stripGeometry(inset, offsetPolygon(inset, -0.09)),
       new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.6, depthWrite: false, toneMapped: false, side: THREE.DoubleSide }),
     );
     waterline.renderOrder = 6;
@@ -619,7 +631,7 @@ export class BrainScene {
     ring.visible = area.id === this.selected;
     group.add(ring);
 
-    const pool: Pool = { id: area.id, name: "", deep: "", poly, group, water, surface, waterline, caustics, label, labelTop, hit, ring, current: this.reduce ? clamp01(area.level) : 0, target: clamp01(area.level) };
+    const pool: Pool = { id: area.id, name: "", deep: "", poly, group, water, surface, waterline, wallWater, caustics, label, labelTop, hit, ring, current: this.reduce ? clamp01(area.level) : 0, target: clamp01(area.level) };
     this.pools.push(pool);
     this.enqueueLabel(pool, area);
     this.applyLevel(pool);
@@ -639,7 +651,7 @@ export class BrainScene {
         // Con todos los nombres ubicados se apoyan los adornos, lejos de ellos.
         if (!this.propsAdded && this.layout) {
           this.propsAdded = true;
-          this.addProps(this.layout);
+          if (this.opts.props !== false) this.addProps(this.layout);
           this.canvas.dataset.ready = "1";
           this.requestRender();
         }
@@ -689,6 +701,8 @@ export class BrainScene {
     p.water.visible = has;
     p.surface.visible = has;
     p.waterline.visible = has;
+    p.wallWater.visible = has;
+    p.wallWater.scale.y = Math.max(h, 1e-4);
     p.waterline.position.y = h + 0.006;
     p.caustics.visible = has;
     p.water.scale.y = Math.max(h, 1e-4);

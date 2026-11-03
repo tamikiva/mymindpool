@@ -30,6 +30,7 @@
     "@types/react": "~19.2.2",
     "@types/three": "^0.170.0",
     "axe-core": "^4.14.0",
+    "esbuild": "^0.28.2",
     "playwright-core": "^1.56.1",
     "typescript": "~6.0.3",
     "vitest": "^4.1.11"
@@ -43,7 +44,8 @@
     "test": "vitest run",
     "export:web": "expo export --platform web",
     "ui-check": "node scripts/ui-check.mjs",
-    "validate:supabase": "node scripts/validate-supabase.mjs"
+    "validate:supabase": "node scripts/validate-supabase.mjs",
+    "brain-lab": "node scripts/brain3d-lab/run.mjs"
   },
   "private": true
 }

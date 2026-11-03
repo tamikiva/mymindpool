@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MAX_POOLS, MIN_POOLS, buildBrainLayout, polygonArea, type Pt } from "./layout";
+import { MAX_POOLS, MIN_POOLS, WALL, buildBrainLayout, polygonArea, type Pt } from "./layout";
 import { pointInPolygon } from "../brain/geometry";
 
 const dist = (a: Pt, b: Pt) => Math.hypot(a.x - b.x, a.y - b.y);
@@ -31,7 +31,7 @@ describe("geometría orgánica del cerebro", () => {
         }
         for (let a = 0; a < n; a++) {
           for (let b = a + 1; b < n; b++) {
-            expect(minGap(L.pools[a].poly, L.pools[b].poly), `${a}-${b}`).toBeGreaterThan(0.25);
+            expect(minGap(L.pools[a].poly, L.pools[b].poly), `${a}-${b}`).toBeGreaterThan(WALL * 0.55);
           }
         }
       });

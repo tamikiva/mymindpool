@@ -912,6 +912,9 @@ async function visual() {
       const t = await body(page);
       check("Equilibrio (referencia): sugiere Salud con motivo verificable (elegida hoy; ya avanzaste en Trabajo)", t.includes("¿Le damos un ratito a Salud?") && t.includes("Ya avanzaste en Trabajo."));
       check("Equilibrio (referencia): muestra primero las tareas chicas de Salud con su duración", /Pedir turno de control[\s\S]*10 min/.test(t) && t.indexOf("Pedir turno de control") < t.indexOf("Salir a caminar"));
+      // En un celular de 844 px de alto (menos ~68 de pestañas) se ve al menos una tarea sin desplazarse.
+      const box = await page.getByRole("button", { name: "Completar Pedir turno de control" }).boundingBox();
+      check("Celular: se ve la primera tarea sin desplazarse (queda sobre la barra de pestañas)", !!box && box.y + box.height <= 844 - 68, `borde inferior=${box ? Math.round(box.y + box.height) : "no se ve"} de ${844 - 68}`);
       await axe(page, "Equilibrio (referencia)");
     }
     await shot(page, name);
