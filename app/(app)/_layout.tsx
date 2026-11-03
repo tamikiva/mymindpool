@@ -17,6 +17,9 @@ export default function AppLayout() {
     >
       <Tabs.Screen name="equilibrio" options={{ title: "Equilibrio" }} />
       <Tabs.Screen name="tareas" options={{ title: "Tareas" }} />
+      <Tabs.Screen name="rutinas" options={{ title: "Rutinas" }} />
+      <Tabs.Screen name="rutina/[id]" options={{ href: null }} />
+      <Tabs.Screen name="ejecucion/[id]" options={{ href: null }} />
       <Tabs.Screen name="area/[id]" options={{ href: null }} />
       <Tabs.Screen name="tarea/[id]" options={{ href: null }} />
     </Tabs>

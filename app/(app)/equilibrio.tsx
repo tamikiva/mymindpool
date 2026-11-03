@@ -1,12 +1,13 @@
-import { Link, Redirect, useFocusEffect } from "expo-router";
+import { Link, Redirect, router, useFocusEffect } from "expo-router";
 import { useCallback, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { Body, Button, Center, Field, Notice, Screen, Title } from "@/components/ui";
+import { fetchOpenRuns, fetchRunStepLoad, type Run } from "@/data/routines";
 import { completeTask, createTask, fetchOpenTasks, toLoadTask, undoCompleteTask, type Task } from "@/data/tasks";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { fetchAreas, fetchProfile, type Area, type Profile } from "@/data/areas";
 import { getSupabase } from "@/data/supabase";
-import { computeBrain, isAllClear } from "@/domain/load";
+import { computeBrain, isAllClear, type LoadTask } from "@/domain/load";
 import { Brain, type BrainArea } from "@/features/brain/Brain";
 import { authErrorMessage } from "@/features/auth/messages";
 import { areaColors, palette } from "@/theme/tokens";
@@ -17,6 +18,8 @@ export default function Equilibrio() {
   const [data, setData] = useState<{ profile: Profile; areas: Area[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [runSteps, setRunSteps] = useState<LoadTask[]>([]);
+  const [runs, setRuns] = useState<Run[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
@@ -27,9 +30,13 @@ export default function Equilibrio() {
   const load = useCallback(async () => {
     setError(null);
     try {
-      const [profile, areas, open] = await Promise.all([fetchProfile(), fetchAreas(), fetchOpenTasks()]);
+      const [profile, areas, open, steps, openRuns] = await Promise.all([
+        fetchProfile(), fetchAreas(), fetchOpenTasks(), fetchRunStepLoad(), fetchOpenRuns(),
+      ]);
       setData({ profile, areas });
       setTasks(open);
+      setRunSteps(steps);
+      setRuns(openRuns);
     } catch (e) {
       setError(authErrorMessage(e));
     }
@@ -52,7 +59,7 @@ export default function Equilibrio() {
   if (!data) return <Center><ActivityIndicator color={palette.primary} /></Center>;
   if (!data.profile.onboarding_completed_at) return <Redirect href="/onboarding" />;
 
-  const loads = computeBrain(data.areas, tasks.map(toLoadTask), today());
+  const loads = computeBrain(data.areas, [...tasks.map(toLoadTask), ...runSteps], today());
   const brainAreas: BrainArea[] = data.areas.map((a, i) => {
     const c = areaColors.find((x) => x.key === a.color_key) ?? areaColors[i % areaColors.length];
     return { id: a.id, name: a.name, fill: c.fill, deep: c.deep, level: loads[i].level };
@@ -101,6 +108,12 @@ export default function Equilibrio() {
       <View style={s.brain}>
         <Brain areas={brainAreas} selectedId={selected} onSelect={setSelected} reduceMotion={data.profile.reduce_motion || undefined} />
       </View>
+      {runs.map((r) => (
+        <View key={r.id} style={s.item}>
+          <Text style={s.itemName}>{r.template_name} {r.status === "paused" ? "(en pausa)" : "en curso"}</Text>
+          <Button label={`Continuar ${r.template_name}`} variant="ghost" onPress={() => router.push({ pathname: "/ejecucion/[id]", params: { id: r.id } })} />
+        </View>
+      ))}
       {isAllClear(loads) ? <Body>Todo despejado. No hace falta resolver nada hoy.</Body> : null}
       {data.areas.map((a, i) => (
         <View key={a.id} style={[s.item, a.id === selected && s.itemOn]}>

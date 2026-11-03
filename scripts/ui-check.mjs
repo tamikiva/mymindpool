@@ -70,7 +70,7 @@ function freshState(areaNames) {
   ].filter((t) => areas.some((a) => a.id === t.area_id));
   // Con muchas áreas, cargas variadas para ver distintos niveles de agua.
   areas.slice(4).forEach((a, i) => tasks.push(mkTask("x" + i, a.id, "Pendiente " + a.name, { weight: ((i % 3) + 1) })));
-  return { areas, tasks, failNextWrite: false, n: 10 };
+  return { areas, tasks, failNextWrite: false, n: 10, templates: [], tsteps: [], runs: [], rsteps: [], rid: 0 };
 }
 
 const json = (body, status = 200) => ({ status, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: status === 204 ? "" : JSON.stringify(body) });
@@ -95,12 +95,67 @@ async function installApi(ctx, st) {
       }
       return route.fulfill(json(st.areas));
     }
-    if (u.pathname.startsWith("/rest/v1/rpc/")) {
+    if (u.pathname.startsWith("/rest/v1/rpc/") && /\/(complete_task|undo_complete_task)$/.test(u.pathname)) {
       const id = JSON.parse(req.postData()).p_task_id;
       const t = st.tasks.find((x) => x.id === id);
       if (u.pathname.endsWith("/complete_task") && t && t.status === "pending") { t.status = "completed"; t.completed_at = new Date().toISOString(); }
       if (u.pathname.endsWith("/undo_complete_task") && t && t.status === "completed") { t.status = "pending"; t.completed_at = null; }
       return route.fulfill(json(null));
+    }
+    if (u.pathname === "/rest/v1/routine_templates") return route.fulfill(json(st.templates.filter((t) => !t.archived)));
+    if (u.pathname === "/rest/v1/routine_template_steps") return route.fulfill(json(st.tsteps));
+    if (u.pathname === "/rest/v1/routine_runs") {
+      const single = (req.headers()["accept"] ?? "").includes("vnd.pgrst.object");
+      let rows = st.runs;
+      const sv = q("status");
+      if (sv?.startsWith("in.")) rows = rows.filter((r) => sv.slice(4, -1).split(",").includes(r.status));
+      if (q("id")) rows = rows.filter((r) => r.id === q("id").replace("eq.", ""));
+      return route.fulfill(json(single ? (rows[0] ?? null) : rows, single && !rows[0] ? 406 : 200));
+    }
+    if (u.pathname === "/rest/v1/routine_run_steps") {
+      let rows = st.rsteps;
+      const rv = q("run_id");
+      if (rv?.startsWith("in.")) rows = rows.filter((r) => rv.slice(4, -1).split(",").includes(r.run_id));
+      if (q("status")?.startsWith("eq.")) rows = rows.filter((r) => r.status === q("status").slice(3));
+      return route.fulfill(json(rows));
+    }
+    if (u.pathname.startsWith("/rest/v1/rpc/") && /save_routine_template|start_routine_run|advance_run_step|set_run_state|archive_routine_template/.test(u.pathname)) {
+      const b = JSON.parse(req.postData());
+      const fn = u.pathname.split("/").pop();
+      if (st.failNextWrite && fn !== "start_routine_run") { st.failNextWrite = false; return route.fulfill(json({ message: "boom", code: "XX000" }, 500)); }
+      if (fn === "save_routine_template") {
+        let id = b.p_id;
+        if (!id) { id = "tp" + ++st.rid; st.templates.push({ id, name: b.p_name, default_area_id: b.p_default_area, start_cue: b.p_cue }); }
+        else Object.assign(st.templates.find((t) => t.id === id), { name: b.p_name, default_area_id: b.p_default_area, start_cue: b.p_cue });
+        st.tsteps = st.tsteps.filter((x) => x.template_id !== id);
+        b.p_steps.forEach((x, i) => st.tsteps.push({ id: id + "s" + i, template_id: id, position: i, title: x.title, area_id: x.area_id, weight: x.weight, duration_minutes: null, in_short: x.in_short }));
+        return route.fulfill(json(id));
+      }
+      if (fn === "archive_routine_template") { st.templates.find((t) => t.id === b.p_id).archived = true; return route.fulfill(json(null)); }
+      if (fn === "start_routine_run") {
+        const open = st.runs.find((r) => r.template_id === b.p_template_id && ["active", "paused"].includes(r.status));
+        if (open) return route.fulfill(json(open.id));
+        const t = st.templates.find((x) => x.id === b.p_template_id);
+        const id = "run" + ++st.rid;
+        st.runs.push({ id, template_id: t.id, template_name: t.name, version: b.p_version, status: "active", run_date: b.p_run_date });
+        st.tsteps.filter((x) => x.template_id === t.id && (b.p_version === "full" || x.position === 0 || x.in_short)).forEach((x, i) => st.rsteps.push({ id: id + "s" + i, run_id: id, position: i, title: x.title, area_id: x.area_id, weight: x.weight, duration_minutes: null, status: "pending" }));
+        return route.fulfill(json(id));
+      }
+      if (fn === "advance_run_step") {
+        const stp = st.rsteps.find((x) => x.id === b.p_step_id);
+        const run = st.runs.find((r) => r.id === stp.run_id);
+        const target = b.p_action === "complete" ? "done" : "skipped";
+        if (stp.status === "pending" && run.status === "active" && !st.rsteps.some((x) => x.run_id === run.id && x.status === "pending" && x.position < stp.position)) stp.status = target;
+        if (!st.rsteps.some((x) => x.run_id === run.id && x.status === "pending")) run.status = "completed";
+        return route.fulfill(json(run.status));
+      }
+      if (fn === "set_run_state") {
+        const run = st.runs.find((r) => r.id === b.p_run_id);
+        if (b.p_action === "pause") run.status = "paused";
+        if (b.p_action === "resume") run.status = "active";
+        if (b.p_action === "cancel") { run.status = "cancelled"; st.rsteps.filter((x) => x.run_id === run.id && x.status === "pending").forEach((x) => (x.status = "cancelled")); }
+        return route.fulfill(json(run.status));
+      }
     }
     if (u.pathname === "/rest/v1/tasks") {
       if (m !== "GET" && st.failNextWrite) { st.failNextWrite = false; return route.fulfill(json({ message: "boom", code: "XX000" }, 500)); }
@@ -283,6 +338,116 @@ async function flows() {
   await d.ctx.close();
 }
 
+// ---------- 1b. Rutinas ----------
+async function routines() {
+  const st = freshState();
+  const { ctx, page } = await newPage({ st });
+  await page.goto(`${BASE}/rutinas`);
+  await page.getByText("Todavía no tenés rutinas").waitFor({ timeout: 20000 });
+  check("Rutinas: estado vacío con acción clara", (await body(page)).includes("Nueva rutina"));
+  await shot(page, "8-rutinas-vacio");
+
+  // Crear desde la plantilla sugerida al escribir «limpiar la casa»
+  await page.getByRole("button", { name: "Nueva rutina" }).click();
+  await page.getByLabel("Nombre", { exact: true }).fill("limpiar la casa");
+  await page.getByRole("button", { name: "Usar la plantilla Limpiar la casa" }).click();
+  await page.getByLabel("Título del paso 7").waitFor({ timeout: 5000 });
+  check("Plantilla local: 7 pasos y empieza por el canasto", (await page.getByLabel("Título del paso 1").inputValue()).includes("canasto de limpieza"));
+  await shot(page, "9-editor-rutina");
+
+  // Validación: un paso vacío bloquea el guardado y no se pierde nada
+  await page.getByLabel("Título del paso 2").fill("");
+  await page.getByRole("button", { name: "Guardar rutina" }).click();
+  await page.getByText("Poné un título para este paso.").waitFor({ timeout: 3000 });
+  check("Editor: paso sin título muestra error y no guarda", st.templates.length === 0);
+  await page.getByLabel("Título del paso 2").fill("Juntar la basura");
+
+  // Reordenar y quitar
+  await page.getByRole("button", { name: "Bajar el paso 2" }).click();
+  check("Editor: bajar un paso lo reordena", (await page.getByLabel("Título del paso 3").inputValue()) === "Juntar la basura");
+  await page.getByRole("button", { name: "Subir el paso 3" }).click();
+  await page.getByRole("button", { name: "Quitar el paso 7" }).click();
+  check("Editor: quitar un paso lo elimina", await page.getByLabel("Título del paso 7").count() === 0);
+  check("Editor: el primer paso no se puede subir y es la acción inicial", (await body(page)).includes("acción inicial"));
+
+  // Fallo al guardar: el borrador se conserva
+  st.failNextWrite = true;
+  await page.getByRole("button", { name: "Guardar rutina" }).click();
+  await page.getByText("Algo no salió como esperábamos").waitFor({ timeout: 5000 });
+  check("Editor: un fallo al guardar conserva el borrador", (await page.getByLabel("Título del paso 1").inputValue()).includes("canasto") && st.templates.length === 0);
+  await page.getByRole("button", { name: "Guardar rutina" }).click();
+  await page.getByText("Mis rutinas").waitFor({ timeout: 8000 });
+  check("Editor: reintentar guarda la rutina una sola vez con 6 pasos", st.templates.length === 1 && st.tsteps.length === 6);
+
+  // Empezar versión corta
+  await page.getByRole("button", { name: "Empezar versión corta de Limpiar la casa" }).waitFor();
+  await shot(page, "10-rutinas-lista");
+  await page.getByRole("button", { name: "Empezar versión corta de Limpiar la casa" }).click();
+  await page.getByText("Paso actual").waitFor({ timeout: 8000 });
+  let t = await body(page);
+  check("Ejecución: muestra solo el paso actual (la acción inicial)", t.includes("canasto de limpieza") && !t.includes("Barrer"));
+  check("Ejecución: la versión corta tiene menos pasos", /0 de 3 pasos resueltos/.test(t) && t.includes("Versión corta"));
+  await shot(page, "11-ejecucion");
+
+  // Equilibrio: la carga de los pasos abiertos cuenta (3 pasos de peso 1 en Casa)
+  await page.goto(`${BASE}/equilibrio`);
+  await page.getByText("Hola, Ana").waitFor({ timeout: 15000 });
+  t = await body(page);
+  check("Equilibrio: suma los pasos abiertos de la rutina a la carga de Casa (3 + 3 = 6 de 8)", /Casa[\s\S]*6 de 8/.test(t));
+  check("Equilibrio: ofrece continuar la rutina en curso", t.includes("en curso"));
+  await page.getByRole("button", { name: "Continuar Limpiar la casa" }).click();
+  await page.getByText("Paso actual").waitFor({ timeout: 8000 });
+
+  // Pausa: no se puede avanzar y se retoma
+  await page.getByRole("button", { name: "Pausar" }).click();
+  await page.getByText("La rutina está en pausa").waitFor({ timeout: 5000 });
+  check("Pausa: desaparecen los botones de avanzar", await page.getByRole("button", { name: "Listo" }).count() === 0);
+  await page.getByRole("button", { name: "Retomar" }).click();
+  await page.getByRole("button", { name: "Listo" }).waitFor({ timeout: 5000 });
+
+  // Completar, saltar, secuencia completa
+  await page.getByRole("button", { name: "Listo" }).click();
+  await page.getByText("Juntar la basura").first().waitFor({ timeout: 5000 });
+  await page.getByRole("button", { name: "Saltar este paso" }).click();
+  await page.getByRole("button", { name: "Ver la secuencia completa" }).click();
+  t = await body(page);
+  check("Secuencia: hecho y saltado se distinguen con texto, no solo con color", t.includes("✓ Hecho") && t.includes("↷ Saltado"));
+  check("Saltar no cuenta como completar", st.rsteps.filter((x) => x.status === "done").length === 1 && st.rsteps.filter((x) => x.status === "skipped").length === 1);
+  await shot(page, "12-secuencia");
+
+  // Cerrar la última: cierre sin encadenar otra rutina
+  await page.getByRole("button", { name: "Listo" }).click();
+  await page.getByText("Terminaste «Limpiar la casa»").waitFor({ timeout: 8000 });
+  t = await body(page);
+  check("Cierre: resume lo hecho y vuelve al equilibrio, sin proponer otra rutina", t.includes("2 pasos hechos, 1 saltado") && t.includes("Volver a mi equilibrio") && !/Empezar/.test(t));
+  await shot(page, "13-cierre");
+  await page.getByRole("button", { name: "Volver a mi equilibrio" }).click();
+  await page.getByText("Hola, Ana").waitFor({ timeout: 8000 });
+  check("Terminada la rutina, su carga ya no cuenta (Casa vuelve a 3 de 8)", /Casa[\s\S]*3 de 8/.test(await body(page)));
+
+  // Cancelar con confirmación
+  await page.goto(`${BASE}/rutinas`);
+  await page.getByRole("button", { name: "Empezar Limpiar la casa" }).click();
+  await page.getByText("Paso actual").waitFor({ timeout: 8000 });
+  await page.getByRole("button", { name: "Cancelar la rutina" }).click();
+  check("Cancelar pide confirmación", (await body(page)).includes("libera los pasos pendientes"));
+  await page.getByRole("button", { name: "No, seguir" }).click();
+  check("«No, seguir» no cancela", st.runs.at(-1).status === "active");
+  await page.getByRole("button", { name: "Cancelar la rutina" }).click();
+  await page.getByRole("button", { name: "Sí, cancelar la rutina" }).click();
+  await page.getByText("Cancelaste «Limpiar la casa»").waitFor({ timeout: 8000 });
+  check("Cancelar libera los pasos pendientes", st.rsteps.filter((x) => x.run_id === st.runs.at(-1).id).every((x) => x.status === "cancelled"));
+
+  // Accesibilidad de las pantallas nuevas
+  await page.goto(`${BASE}/rutinas`);
+  await page.getByText("Mis rutinas").waitFor({ timeout: 8000 });
+  await axe(page, "Rutinas");
+  await page.getByRole("link", { name: "Editar Limpiar la casa" }).click();
+  await page.getByText("Editar rutina").waitFor({ timeout: 8000 });
+  await axe(page, "Editor de rutina");
+  await ctx.close();
+}
+
 // ---------- 2. Teclado y accesibilidad ----------
 async function keyboardAndA11y() {
   const st = freshState();
@@ -434,7 +599,7 @@ async function brainCounts() {
 }
 
 // ---------- ejecución ----------
-for (const [name, fn] of [["Recorridos", flows], ["Teclado y accesibilidad", keyboardAndA11y], ["Movimiento", motion], ["Cerebro 2 y 8 áreas", brainCounts]]) {
+for (const [name, fn] of [["Recorridos", flows], ["Rutinas", routines], ["Teclado y accesibilidad", keyboardAndA11y], ["Movimiento", motion], ["Cerebro 2 y 8 áreas", brainCounts]]) {
   console.log(`\n== ${name}`);
   const before = results.length;
   try { await fn(); } catch (e) { check(`${name}: el recorrido terminó sin excepción`, false, String(e.message).split("\n")[0]); }

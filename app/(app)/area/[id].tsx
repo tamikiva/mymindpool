@@ -4,8 +4,9 @@ import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { Body, Button, Center, Field, Notice, Screen, Title } from "@/components/ui";
 import { Chips } from "@/components/Chips";
 import { fetchAreas, updateArea, type Area } from "@/data/areas";
+import { fetchRunStepLoad } from "@/data/routines";
 import { completeTask, createTask, fetchOpenTasks, moveOpenTasks, type Task, toLoadTask } from "@/data/tasks";
-import { computeAreaLoad, type LoadBand } from "@/domain/load";
+import { computeAreaLoad, type LoadBand, type LoadTask } from "@/domain/load";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { dataErrorMessage } from "@/features/auth/messages";
 import { areaColors, palette } from "@/theme/tokens";
@@ -18,6 +19,7 @@ export default function AreaScreen() {
   const { session } = useAuth();
   const [areas, setAreas] = useState<Area[] | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [runSteps, setRunSteps] = useState<LoadTask[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -31,9 +33,10 @@ export default function AreaScreen() {
   const load = useCallback(async () => {
     setError(null);
     try {
-      const [a, t] = await Promise.all([fetchAreas(), fetchOpenTasks()]);
+      const [a, t, steps] = await Promise.all([fetchAreas(), fetchOpenTasks(), fetchRunStepLoad()]);
       setAreas(a);
       setTasks(t);
+      setRunSteps(steps);
       const me = a.find((x) => x.id === id);
       if (me) {
         setName(me.name);
@@ -71,7 +74,8 @@ export default function AreaScreen() {
   }
 
   const mine = tasks.filter((t) => t.area_id === area.id);
-  const load_ = computeAreaLoad(area.id, area.capacity, tasks.map(toLoadTask), today());
+  const load_ = computeAreaLoad(area.id, area.capacity, [...tasks.map(toLoadTask), ...runSteps], today());
+  const routineSteps = runSteps.filter((r) => r.areaId === area.id).length;
   const others = areas.filter((a) => a.id !== area.id);
   const cap = Number(capacity);
   const capError = Number.isInteger(cap) && cap >= 1 && cap <= 100 ? null : "Usá un número entero entre 1 y 100.";
@@ -100,6 +104,7 @@ export default function AreaScreen() {
         <Text style={s.strong}>{BAND[load_.band]}</Text>
         <Text style={s.muted}>{load_.pending} de {area.capacity} puntos pendientes</Text>
         {load_.excess > 0 ? <Text style={s.muted}>{load_.excess} puntos por encima de tu referencia</Text> : null}
+        {routineSteps > 0 ? <Text style={s.muted}>Incluye {routineSteps} paso{routineSteps === 1 ? "" : "s"} de rutinas en curso</Text> : null}
         {load_.pending === 0 ? <Text style={s.muted}>Sin pendientes: esta área está despejada.</Text> : null}
         <Text style={s.muted}>Tiempo registrado: sin registro</Text>
       </View>
