@@ -32,6 +32,7 @@ export interface BrainLayout {
 }
 
 import { pointInPolygon } from "../brain/geometry";
+import { REFERENCE_4 } from "./referenceShape";
 
 export const MIN_POOLS = 2;
 export const MAX_POOLS = 8;
@@ -353,6 +354,50 @@ export function visibleFloor(poly: readonly Pt[], occlusion: number): Pt[] {
   return loop.length >= 8 ? loop : [...poly];
 }
 
+const toPts = (l: readonly (readonly [number, number])[]): Pt[] => l.map(([x, y]) => ({ x, y }));
+
+/** Celdas de la grilla dentro de un polígono. */
+function rasterize(poly: readonly Pt[]): Uint8Array {
+  const m = new Uint8Array(NX * NY);
+  const xs = poly.map((p) => p.x);
+  const ys = poly.map((p) => p.y);
+  const i0 = Math.max(0, Math.floor((Math.min(...xs) - X0) / CELL) - 1);
+  const i1 = Math.min(NX - 1, Math.ceil((Math.max(...xs) - X0) / CELL) + 1);
+  const j0 = Math.max(0, Math.floor((Math.min(...ys) - Y0) / CELL) - 1);
+  const j1 = Math.min(NY - 1, Math.ceil((Math.max(...ys) - Y0) / CELL) + 1);
+  for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) if (pointInPolygon({ x: px(i), y: py(j) }, poly)) m[idx(i, j)] = 1;
+  return m;
+}
+
+/**
+ * Cerebro de la referencia (4 áreas): el contorno y las piletas trazados de la imagen. Cada celda de
+ * pared o borde se reparte entre las piletas vecinas por cercanía, de modo que las divisiones
+ * quedan sobre el centro de las paredes de la referencia (curvas en S que se entrelazan).
+ */
+function referenceCells(): { inside: Uint8Array; cell: Int8Array } {
+  const N = NX * NY;
+  const inside = rasterize(toPts(REFERENCE_4.outline));
+  const cell = new Int8Array(N).fill(-1);
+  const queue: number[] = [];
+  REFERENCE_4.pools.forEach((pool, k) => {
+    const m = rasterize(toPts(pool));
+    for (let n = 0; n < N; n++) if (m[n] && inside[n]) { cell[n] = k; queue.push(n); }
+  });
+  for (let head = 0; head < queue.length; head++) {
+    const n = queue[head];
+    const i = n % NX;
+    const j = (n / NX) | 0;
+    for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const a = i + di;
+      const b = j + dj;
+      if (a < 0 || b < 0 || a >= NX || b >= NY) continue;
+      const m = idx(a, b);
+      if (inside[m] && cell[m] < 0) { cell[m] = cell[n]; queue.push(m); }
+    }
+  }
+  return { inside, cell };
+}
+
 const cache = new Map<number, BrainLayout>();
 
 export function buildBrainLayout(count: number): BrainLayout {
@@ -361,23 +406,30 @@ export function buildBrainLayout(count: number): BrainLayout {
   if (hit) return hit;
 
   const N = NX * NY;
-  const inside = new Uint8Array(N);
-  for (let j = 0; j < NY; j++) for (let i = 0; i < NX; i++) if (insideBrain(px(i), py(j))) inside[idx(i, j)] = 1;
-  const nL = Math.ceil(count / 2);
-  // Con cantidad impar el hemisferio izquierdo lleva una fila más: se le da proporcionalmente más lugar
-  // (a medias, para que siga pareciendo un cerebro) y así las piletas quedan de tamaño parecido.
-  const share = 0.5 + 0.7 * (nL / count - 0.5);
-  const colArea = new Float64Array(NX);
-  let total = 0;
-  for (let j = 0; j < NY; j++) for (let i = 0; i < NX; i++) if (inside[idx(i, j)]) { colArea[i]++; total++; }
-  let fx = 0;
-  for (let i = 0, acc = 0; i < NX; i++) {
-    acc += colArea[i];
-    if (acc >= total * share) { fx = px(i); break; }
+  let inside: Uint8Array;
+  let cell: Int8Array;
+  if (count === 4) {
+    // El caso de 4 áreas usa el contorno y las divisiones de la referencia.
+    ({ inside, cell } = referenceCells());
+  } else {
+    inside = new Uint8Array(N);
+    for (let j = 0; j < NY; j++) for (let i = 0; i < NX; i++) if (insideBrain(px(i), py(j))) inside[idx(i, j)] = 1;
+    const nL = Math.ceil(count / 2);
+    // Con cantidad impar el hemisferio izquierdo lleva una fila más: se le da proporcionalmente más lugar
+    // (a medias, para que siga pareciendo un cerebro) y así las piletas quedan de tamaño parecido.
+    const share = 0.5 + 0.7 * (nL / count - 0.5);
+    const colArea = new Float64Array(NX);
+    let total = 0;
+    for (let j = 0; j < NY; j++) for (let i = 0; i < NX; i++) if (inside[idx(i, j)]) { colArea[i]++; total++; }
+    let fx = 0;
+    for (let i = 0, acc = 0; i < NX; i++) {
+      acc += colArea[i];
+      if (acc >= total * share) { fx = px(i); break; }
+    }
+    const part: Partition = { n: count, fx, left: rowCuts(inside, nL, true, fx), right: rowCuts(inside, count - nL, false, fx) };
+    cell = new Int8Array(N).fill(-1);
+    for (let j = 0; j < NY; j++) for (let i = 0; i < NX; i++) if (inside[idx(i, j)]) cell[idx(i, j)] = poolOf(px(i), py(j), part);
   }
-  const part: Partition = { n: count, fx, left: rowCuts(inside, nL, true, fx), right: rowCuts(inside, count - nL, false, fx) };
-  const cell = new Int8Array(N).fill(-1);
-  for (let j = 0; j < NY; j++) for (let i = 0; i < NX; i++) if (inside[idx(i, j)]) cell[idx(i, j)] = poolOf(px(i), py(j), part);
   const dSil = distanceToSource(inside.map((v) => (v ? 0 : 1)) as Uint8Array);
 
   const outline = largestLoop(gaussianBlur(signedDistance(inside), 0.1), 0.09);

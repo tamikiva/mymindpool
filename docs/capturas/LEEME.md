@@ -13,3 +13,4 @@ Generadas por `npm run ui-check` en Chromium (390 px y 1200 px) con **datos simu
 - `18`–`20` — Tareas repetidas: editor, lista y repeticiones dentro de Tareas
 - `1c-niveles-extremos.png` (lienzo a doble resolución) y `1c-niveles-extremos-pantalla.png` — Casa casi vacía (1 %) y Trabajo casi llena (88 %): se ve la diferencia de nivel
 - `laboratorio-una-pileta.png` — una pileta sin adornos al 0 %, 50 % y 100 % con la misma cámara (`npm run brain-lab`)
+- `forma-4-areas.png` — la referencia, la forma de 4 áreas sin agua ni adornos desde arriba y desde la cámara final (`MODE=shape npm run brain-lab`)

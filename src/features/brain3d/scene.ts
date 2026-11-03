@@ -338,6 +338,12 @@ export interface SceneOptions {
   props?: boolean;
   /** Geometría a usar en lugar de la generada por cantidad de áreas (pruebas). */
   layout?: BrainLayout;
+  /** false = sin agua (para evaluar solo la forma). */
+  water?: boolean;
+  /** false = sin nombres. */
+  labels?: boolean;
+  /** Inclinación de cámara en radianes (por defecto TILT; π/2 ≈ vista cenital). */
+  tilt?: number;
 }
 
 export class BrainScene {
@@ -450,11 +456,12 @@ export class BrainScene {
   }
 
   /** Relación alto/ancho que encuadra la escena con la cámara real (perspectiva, inclinada). */
-  static aspectFor(count: number, layout?: BrainLayout): number {
+  static aspectFor(count: number, layout?: BrainLayout, tiltOverride?: number): number {
     const b = (layout ?? buildBrainLayout(count)).bounds;
     const cam = new THREE.PerspectiveCamera(FOV, 1, 0.1, 400);
     const target = new THREE.Vector3((b.minX + b.maxX) / 2, 0.1, (b.minY + b.maxY) / 2 + 0.15);
-    cam.position.copy(target).add(new THREE.Vector3(0, Math.sin(TILT), Math.cos(TILT)).multiplyScalar(40));
+    const tl = tiltOverride ?? TILT;
+    cam.position.copy(target).add(new THREE.Vector3(0, Math.sin(tl), Math.cos(tl)).multiplyScalar(40));
     cam.lookAt(target);
     cam.updateMatrixWorld(true);
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
@@ -543,6 +550,11 @@ export class BrainScene {
 
     this.areas.forEach((area, i) => this.buildPool(layout, i, area));
     this.fit();
+    if (this.opts.labels === false) {
+      if (this.opts.props !== false) this.addProps(layout);
+      this.propsAdded = true;
+      this.canvas.dataset.ready = "1";
+    }
   }
 
   private buildPool(layout: BrainLayout, i: number, area: SceneArea): void {
@@ -581,9 +593,11 @@ export class BrainScene {
     const label = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false, toneMapped: false }));
     label.position.y = 0.012;
     label.renderOrder = 2;
+    label.visible = false; // hasta tener su texto: si no, se vería un cuadrado blanco de 1×1
     group.add(label);
     const labelTop = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false, toneMapped: false, opacity: 0 }));
     labelTop.renderOrder = 5;
+    labelTop.visible = false;
     group.add(labelTop);
 
     // Agua: volumen (de piso a superficie) escalado en altura, más una hoja con ondas arriba.
@@ -633,7 +647,7 @@ export class BrainScene {
 
     const pool: Pool = { id: area.id, name: "", deep: "", poly, group, water, surface, waterline, wallWater, caustics, label, labelTop, hit, ring, current: this.reduce ? clamp01(area.level) : 0, target: clamp01(area.level) };
     this.pools.push(pool);
-    this.enqueueLabel(pool, area);
+    if (this.opts.labels !== false) this.enqueueLabel(pool, area);
     this.applyLevel(pool);
   }
 
@@ -683,6 +697,8 @@ export class BrainScene {
     pool.label.position.set(cx / LABEL_SCALE, 0.012, cy / LABEL_SCALE);
     // En el plano del piso (x, z = y del dibujo) girar «angle» hacia abajo equivale a rotar -angle sobre y.
     pool.label.rotation.y = -angle;
+    pool.label.visible = true;
+    pool.labelTop.visible = true;
     pool.label.userData.center = { x: cx / LABEL_SCALE, y: cy / LABEL_SCALE, w, h };
     const top = pool.labelTop.material as THREE.MeshBasicMaterial;
     top.map = mat.map;
@@ -697,7 +713,7 @@ export class BrainScene {
   /** Altura del agua, opacidad según profundidad y visibilidad del brillo del fondo. */
   private applyLevel(p: Pool): void {
     const h = p.current * MAX_WATER;
-    const has = p.current > 0.004;
+    const has = p.current > 0.004 && this.opts.water !== false;
     p.water.visible = has;
     p.surface.visible = has;
     p.waterline.visible = has;
@@ -814,7 +830,7 @@ export class BrainScene {
   private fit(): void {
     if (!this.layout) return;
     const b = this.layout.bounds;
-    const tilt = TILT;
+    const tilt = this.opts.tilt ?? TILT;
     const target = new THREE.Vector3((b.minX + b.maxX) / 2, 0.1, (b.minY + b.maxY) / 2 + 0.15);
     const dir = new THREE.Vector3(0, Math.sin(tilt), Math.cos(tilt));
     const corners = frameCorners(b).map(([x, y, z]) => new THREE.Vector3(x, y, z));

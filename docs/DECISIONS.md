@@ -97,3 +97,10 @@ Tras la devolución («bordes demasiado anchos respecto del agua, falta profundi
 - Las plantas desaparecen por ahora (con paredes finas no hay lugar en el borde); quedan flotadores y escalera.
 **Sigue pendiente:** la silueta no se reconoce como cerebro (lóbulos finos; no se tocó en esta pasada), 2–8 áreas, y evaluar si hace falta el recurso externo. Móvil: tarjeta de sugerencia y leyenda compactas; se ven 3 tareas sin desplazarse en 390×844 (verificado por `ui-check`).
 
+## D-020 · Silueta de cerebro trazada de la referencia (4 áreas) (2026-11-03)
+La silueta procedural (superelipse con lóbulos) no se reconocía como cerebro. Para 4 áreas se usa ahora el **contorno real de la referencia de celular**: las 4 piletas se segmentaron por color y el borde exterior es la unión de piletas y paredes engrosada (`referenceShape.ts`, ÷ 0,85 por el acortamiento de la perspectiva, 10,3 unidades de ancho). Las divisiones interiores son las **curvas en S de la referencia** (Casa se extiende arriba a la izquierda, Trabajo baja por el centro, Salud en diagonal hacia abajo a la derecha, Vida social abajo a la derecha), no una cruz. Cada celda de pared se reparte entre las piletas vecinas por cercanía y el generador talla paredes del espesor elegido (RIM 0,17 y WALL 0,30), así que las piletas quedan algo más anchas que las visibles en la referencia.
+- Se corrigió un defecto real: el plano del nombre se veía como un cuadrado blanco de 1×1 hasta tener su texto (ahora está oculto).
+- La escena acepta `water: false`, `labels: false` y `tilt` (vista cenital) para evaluar solo la forma: `MODE=shape REFERENCE_IMAGE=… npm run brain-lab`.
+**Diferencias con la referencia:** los lóbulos finos del borde (sobre todo abajo a la izquierda) salen más suaves por el suavizado; la referencia tiene escalones y detalles que no se modelan.
+**Pendiente:** integrar y revisar el agua con esta forma; 2–8 áreas (siguen con la forma procedural anterior).
+

@@ -55,6 +55,9 @@ Limitaciones reales (lo que NO está hecho):
 - Sin sincronización entre dispositivos probada (dos dispositivos a la vez): las funciones son idempotentes y hay pruebas secuenciales, pero no concurrentes.
 - Para ver las pantallas hay que cargar las variables de Supabase y correr `npx expo start --web`; no hay ambiente de revisión publicado.
 
+## Silueta de cerebro trazada de la referencia (2026-11-03, cuarta pasada)
+Ver D-020. Captura de la forma sin agua ni adornos junto a la referencia: `forma-4-areas.png`. 4 áreas usan el contorno trazado; 2–8 siguen pendientes. 192 pruebas y 128 comprobaciones del navegador pasan (datos simulados).
+
 ## Laboratorio de una pileta y paredes finas (2026-11-03, tercera pasada)
 Ver D-019. Capturas: `laboratorio-una-pileta.png`, `1-equilibrio.png`, `1c-niveles-extremos*.png`. Sin aprobar visualmente: silueta de cerebro y 2–8 áreas pendientes.
 

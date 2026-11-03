@@ -1,0 +1,2 @@
+# Trazado de la referencia (solo documentación del origen)
+`src/features/brain3d/referenceShape.ts` sale de la imagen de referencia de celular (que **no está en el repositorio**): `trace-reference.mjs` segmenta las piletas por color y arma el borde exterior; `emit-shape.mjs` corrige el acortamiento de la perspectiva (÷ 0,85), escala a 10,3 unidades de ancho y escribe el archivo. Son scripts de una sola vez, con rutas del entorno donde se hicieron (hay que ajustarlas si se repite el trazado con otra imagen).
