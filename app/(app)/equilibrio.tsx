@@ -1,7 +1,9 @@
 import { Redirect } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
-import { Body, Button, Center, Notice, Screen, Title } from "@/components/ui";
+import { Body, Button, Center, Field, Notice, Screen, Title } from "@/components/ui";
+import { completeTask, createTask, fetchOpenTasks, toLoadTask, undoCompleteTask, type Task } from "@/data/tasks";
+import { useAuth } from "@/features/auth/AuthProvider";
 import { fetchAreas, fetchProfile, type Area, type Profile } from "@/data/areas";
 import { getSupabase } from "@/data/supabase";
 import { computeBrain, isAllClear } from "@/domain/load";
@@ -14,13 +16,20 @@ const today = () => new Date().toLocaleDateString("sv-SE"); // YYYY-MM-DD local
 export default function Equilibrio() {
   const [data, setData] = useState<{ profile: Profile; areas: Area[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [tasks, setTasks] = useState<Task[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [justDone, setJustDone] = useState<Task | null>(null);
+  const { session } = useAuth();
 
   const load = useCallback(async () => {
     setError(null);
     try {
-      const [profile, areas] = await Promise.all([fetchProfile(), fetchAreas()]);
+      const [profile, areas, open] = await Promise.all([fetchProfile(), fetchAreas(), fetchOpenTasks()]);
       setData({ profile, areas });
+      setTasks(open);
     } catch (e) {
       setError(authErrorMessage(e));
     }
@@ -40,13 +49,48 @@ export default function Equilibrio() {
   if (!data) return <Center><ActivityIndicator color={palette.primary} /></Center>;
   if (!data.profile.onboarding_completed_at) return <Redirect href="/onboarding" />;
 
-  // Tareas llegan en el hito 2: hoy no hay carga que calcular, el nivel es 0 real.
-  const loads = computeBrain(data.areas, [], today());
+  const loads = computeBrain(data.areas, tasks.map(toLoadTask), today());
   const brainAreas: BrainArea[] = data.areas.map((a, i) => {
     const c = areaColors.find((x) => x.key === a.color_key) ?? areaColors[i % areaColors.length];
     return { id: a.id, name: a.name, fill: c.fill, deep: c.deep, level: loads[i].level };
   });
   const name = data.profile.display_name;
+  const area = data.areas.find((a) => a.id === selected) ?? null;
+  const areaTasks = area ? tasks.filter((t) => t.area_id === area.id) : [];
+
+  // Una escritura que falla no se anuncia como hecha: se avisa y se conserva lo escrito.
+  const run = async (fn: () => Promise<void>) => {
+    setBusy(true);
+    setActionError(null);
+    try {
+      await fn();
+      setTasks(await fetchOpenTasks());
+    } catch (e) {
+      setActionError(authErrorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const add = () => {
+    if (!area || !session || !draft.trim()) return;
+    void run(async () => {
+      await createTask(session.user.id, { areaId: area.id, title: draft });
+      setDraft("");
+    });
+  };
+  const done = (t: Task) =>
+    void run(async () => {
+      await completeTask(t.id);
+      setJustDone(t);
+    });
+  const undo = () => {
+    const t = justDone;
+    if (!t) return;
+    void run(async () => {
+      await undoCompleteTask(t.id);
+      setJustDone(null);
+    });
+  };
 
   return (
     <Screen>
@@ -61,7 +105,29 @@ export default function Equilibrio() {
           <Text style={s.muted}>{loads[i].pending} de {a.capacity} puntos pendientes</Text>
         </View>
       ))}
-      <Body>Las tareas llegan en la próxima etapa; por ahora podés ver y ordenar tus áreas.</Body>
+      {actionError ? <Notice kind="error">{actionError}</Notice> : null}
+      {justDone ? (
+        <Notice kind="info">
+          Completaste «{justDone.title}».
+        </Notice>
+      ) : null}
+      {justDone ? <Button label="Deshacer" variant="ghost" busy={busy} onPress={undo} /> : null}
+      {area ? (
+        <View style={s.item}>
+          <Text style={s.itemName}>{area.name}</Text>
+          {areaTasks.length === 0 ? <Text style={s.muted}>No hay pendientes en esta área.</Text> : null}
+          {areaTasks.map((t) => (
+            <View key={t.id} style={s.taskRow}>
+              <Text style={[s.itemName, { flex: 1, fontWeight: "400" }]}>{t.title} · {t.weight} pt</Text>
+              <Button label={`Completar ${t.title}`} variant="ghost" disabled={busy} onPress={() => done(t)} />
+            </View>
+          ))}
+          <Field label="Nueva tarea" value={draft} onChangeText={setDraft} maxLength={200} onSubmitEditing={add} returnKeyType="done" />
+          <Button label="Agregar" busy={busy} disabled={!draft.trim()} onPress={add} />
+        </View>
+      ) : (
+        <Body>Tocá una pileta para ver y agregar sus tareas.</Body>
+      )}
       <Button label="Cerrar sesión" variant="ghost" onPress={() => void getSupabase().auth.signOut()} />
     </Screen>
   );
@@ -72,5 +138,6 @@ const s = StyleSheet.create({
   item: { padding: 12, borderRadius: 14, borderWidth: 1, borderColor: "#E7E0F2", backgroundColor: "#fff" },
   itemOn: { borderColor: palette.primary, borderWidth: 2 },
   itemName: { fontSize: 16, fontWeight: "700", color: palette.text },
+  taskRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   muted: { color: palette.textMuted, fontSize: 14 },
 });
