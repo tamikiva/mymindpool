@@ -39,7 +39,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "export:web": "expo export --platform web",
-    "ui-check": "node scripts/ui-check.mjs"
+    "ui-check": "node scripts/ui-check.mjs",
+    "validate:supabase": "node scripts/validate-supabase.mjs"
   },
   "private": true
 }
