@@ -16,7 +16,7 @@ export function blockFits(poly: readonly Pt[], cx: number, cy: number, label: La
  * Busca, dentro del sector, el punto donde el nombre se lee más grande sin salirse de las
  * paredes. Es costoso: memorizar el resultado por (sector, cantidad, nombre).
  */
-export function placeLabel(poly: Pt[], name: string): { label: LabelLayout; cx: number; cy: number } {
+export function placeLabel(poly: Pt[], name: string, maxFont?: number): { label: LabelLayout; cx: number; cy: number } {
   const c = areaCentroid(poly);
   const b = bounds(poly);
   let best: { label: LabelLayout; cx: number; cy: number; score: number } | null = null;
@@ -31,10 +31,10 @@ export function placeLabel(poly: Pt[], name: string): { label: LabelLayout; cx: 
       const halfH = Math.min(y - v[0], v[1] - y);
       if (halfW < 8 || halfH < 5) continue;
       let k = 0.95;
-      let label = layoutLabel(name, 2 * halfW * k, 2 * halfH * k);
+      let label = layoutLabel(name, 2 * halfW * k, 2 * halfH * k, maxFont);
       for (let tries = 0; tries < 8 && !blockFits(poly, x, y, label); tries++) {
         k *= 0.88;
-        label = layoutLabel(name, 2 * halfW * k, 2 * halfH * k);
+        label = layoutLabel(name, 2 * halfW * k, 2 * halfH * k, maxFont);
       }
       if (!blockFits(poly, x, y, label)) continue;
       // Más grande es mejor; entre iguales, el más cercano al centro del sector; sin acortar si se puede.

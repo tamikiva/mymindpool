@@ -11,9 +11,10 @@ export interface Task {
   scheduled_date: string | null;
   someday: boolean;
   note: string | null;
+  estimate_minutes: number | null;
 }
 
-const COLUMNS = "id, area_id, title, status, weight, priority, scheduled_date, someday, note";
+const COLUMNS = "id, area_id, title, status, weight, priority, scheduled_date, someday, note, estimate_minutes";
 
 /** Tareas abiertas (el resto no cuenta para el agua ni para la lista de pendientes). */
 export async function fetchOpenTasks(): Promise<Task[]> {
@@ -109,4 +110,19 @@ export async function moveOpenTasks(fromAreaId: string, toAreaId: string): Promi
     .eq("area_id", fromAreaId)
     .in("status", ["pending", "in_progress"]);
   if (error) throw error;
+}
+
+/** Cuántas tareas se completaron hoy en cada área (desde la medianoche local). */
+export async function fetchCompletedToday(): Promise<Record<string, number>> {
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  const { data, error } = await getSupabase()
+    .from("tasks")
+    .select("area_id")
+    .eq("status", "completed")
+    .gte("completed_at", start.toISOString());
+  if (error) throw error;
+  const out: Record<string, number> = {};
+  for (const r of (data ?? []) as { area_id: string }[]) out[r.area_id] = (out[r.area_id] ?? 0) + 1;
+  return out;
 }

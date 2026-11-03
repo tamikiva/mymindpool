@@ -55,7 +55,7 @@ const session = { access_token: jwt, refresh_token: "r", token_type: "bearer", e
 const TODAY = new Date().toLocaleDateString("sv-SE");
 const COLORS = ["lila", "celeste", "verde", "rosa", "durazno", "menta", "malva", "cielo"];
 
-const mkTask = (id, area_id, title, over = {}) => ({ id, area_id, title, status: "pending", weight: 1, priority: "normal", scheduled_date: null, someday: false, note: null, completed_at: null, ...over });
+const mkTask = (id, area_id, title, over = {}) => ({ id, area_id, title, status: "pending", weight: 1, priority: "normal", scheduled_date: null, someday: false, note: null, estimate_minutes: null, completed_at: null, ...over });
 
 function freshState(areaNames) {
   const names = areaNames ?? ["Casa", "Trabajo", "Salud", "Vida social"];
@@ -246,6 +246,8 @@ async function installApi(ctx, st) {
       const sv = q("status");
       if (sv?.startsWith("in.")) rows = rows.filter((t) => sv.slice(4, -1).split(",").includes(t.status));
       if (sv?.startsWith("eq.")) rows = rows.filter((t) => t.status === sv.slice(3));
+      const cat = q("completed_at");
+      if (cat?.startsWith("gte.")) rows = rows.filter((t) => t.completed_at && t.completed_at >= cat.slice(4));
       const idv = q("id");
       if (idv?.startsWith("in.")) rows = rows.filter((t) => idv.slice(4, -1).split(",").includes(t.id));
       else if (idv) rows = rows.filter((t) => t.id === idv.replace("eq.", ""));
@@ -302,7 +304,7 @@ async function flows() {
   const st = freshState();
   const { ctx, page } = await newPage({ st });
   await page.goto(`${BASE}/equilibrio`);
-  await page.getByText("Hola, Ana").waitFor({ timeout: 20000 });
+  await page.getByText("Un paso a la vez").waitFor({ timeout: 20000 });
   check("Equilibrio muestra carga real de Casa (3 de 8)", /Casa[\s\S]*3 de 8/.test(await body(page)));
   await shot(page, "1-equilibrio");
 
@@ -390,7 +392,7 @@ async function flows() {
   await chip(page, "Casa").click();
   check("Con destino elegido, confirmar se habilita", !/aria-disabled="true"/.test(await confirm.evaluate((e) => (e.disabled || e.getAttribute("aria-disabled") === "true" ? "deshabilitado" : "habilitado"))));
   await confirm.click();
-  await page.getByText("Hola, Ana").waitFor({ timeout: 8000 });
+  await page.getByText("Un paso a la vez").waitFor({ timeout: 8000 });
   check("Archivar mueve los pendientes al destino", !st.areas.some((a) => a.id === "a2") && st.tasks.filter((x) => x.area_id === "a2" && x.status === "pending").length === 0);
   await ctx.close();
 
@@ -463,7 +465,7 @@ async function routines() {
 
   // Equilibrio: la carga de los pasos abiertos cuenta (3 pasos de peso 1 en Casa)
   await page.goto(`${BASE}/equilibrio`);
-  await page.getByText("Hola, Ana").waitFor({ timeout: 15000 });
+  await page.getByText("Un paso a la vez").waitFor({ timeout: 15000 });
   t = await body(page);
   check("Equilibrio: suma los pasos abiertos de la rutina a la carga de Casa (3 + 3 = 6 de 8)", /Casa[\s\S]*6 de 8/.test(t));
   check("Equilibrio: ofrece continuar la rutina en curso", t.includes("en curso"));
@@ -494,7 +496,7 @@ async function routines() {
   check("Cierre: resume lo hecho y vuelve al equilibrio, sin proponer otra rutina", t.includes("2 pasos hechos, 1 saltado") && t.includes("Volver a mi equilibrio") && !/Empezar/.test(t));
   await shot(page, "13-cierre");
   await page.getByRole("button", { name: "Volver a mi equilibrio" }).click();
-  await page.getByText("Hola, Ana").waitFor({ timeout: 8000 });
+  await page.getByText("Un paso a la vez").waitFor({ timeout: 8000 });
   check("Terminada la rutina, su carga ya no cuenta (Casa vuelve a 3 de 8)", /Casa[\s\S]*3 de 8/.test(await body(page)));
 
   // Cancelar con confirmación
@@ -665,7 +667,7 @@ async function recurring() {
   daily.occs.push({ id: "old1", recurring_task_id: "rt1", occurrence_date: dayBefore(2), title: "Tomar la medicación", area_id: "a1", weight: 2, status: "pending" });
   daily.occs.push({ id: "old2", recurring_task_id: "rt1", occurrence_date: dayBefore(1), title: "Tomar la medicación", area_id: "a1", weight: 2, status: "pending" });
   await d.page.goto(`${BASE}/equilibrio`);
-  await d.page.getByText("Hola, Ana").waitFor({ timeout: 20000 });
+  await d.page.getByText("Un paso a la vez").waitFor({ timeout: 20000 });
   let t = await body(d.page);
   check("Equilibrio: genera la repetición de hoy y solo ella suma (Casa 3 + 2 = 5 de 8; las 2 vencidas no acumulan)", /Casa[\s\S]*5 de 8/.test(t));
   check("Se generó una sola ocurrencia por día, hoy y los 7 días siguientes (8 fechas)", daily.occs.filter((o) => o.id.startsWith("oc")).length === 8 && new Set(daily.occs.map((o) => o.occurrence_date)).size === daily.occs.length);
@@ -745,15 +747,18 @@ async function keyboardAndA11y() {
   await axe(page, "Tareas");
 
   await page.goto(`${BASE}/equilibrio`);
-  await page.getByText("Hola, Ana").waitFor({ timeout: 15000 });
+  await page.getByText("Un paso a la vez").waitFor({ timeout: 15000 });
   await axe(page, "Equilibrio");
-  // El cerebro es operable con teclado: cada pileta es un radio enfocable y Enter la selecciona.
+  // El cerebro 3D no se opera por sí mismo: su leyenda son radios enfocables y Enter elige la pileta.
   const radios = page.getByRole("radio");
-  check("Cerebro: una pileta enfocable por área", (await radios.count()) === 4, `radios=${await radios.count()}`);
-  await radios.nth(1).focus();
+  check("Cerebro: un radio enfocable por área (la leyenda)", (await radios.count()) === 4, `radios=${await radios.count()}`);
+  const second = radios.nth(1);
+  await second.focus();
+  const before = await second.getAttribute("aria-checked");
   await page.keyboard.press("Enter");
   await page.waitForTimeout(300);
-  check("Cerebro: Enter selecciona la pileta y abre sus tareas", (await body(page)).includes("Abrir área"));
+  check("Cerebro: Enter elige el área (aria-checked cambia a true)", before !== "true" && (await second.getAttribute("aria-checked")) === "true", `antes=${before}`);
+  check("Cerebro: el lienzo 3D describe las áreas y su carga a lectores de pantalla", /Mi equilibrio: Casa, carga pendiente \d+ por ciento/.test((await page.locator("canvas").getAttribute("aria-label")) ?? ""));
   await axe(page, "Equilibrio con área elegida");
 
   await page.goto(`${BASE}/tarea/t3`);
@@ -773,40 +778,60 @@ async function keyboardAndA11y() {
 }
 
 // ---------- 3. Reducción de movimiento ----------
-/** Cuenta cuántos estados distintos toma el dibujo del cerebro mientras se completa una tarea. */
+/** Cuenta cuántos valores distintos toma el nivel del agua del lienzo 3D mientras se completa una tarea. */
 async function distinctFrames(reducedMotion) {
   const st = freshState();
   const { ctx, page } = await newPage({ st, reducedMotion });
   await page.goto(`${BASE}/equilibrio`);
-  await page.getByText("Hola, Ana").waitFor({ timeout: 15000 });
-  await page.getByRole("radio").nth(1).focus();
+  await page.getByText("Un paso a la vez").waitFor({ timeout: 15000 });
+  await page.locator('canvas[data-ready="1"]').waitFor({ timeout: 30000 });
+  await page.getByRole("radio", { name: "Trabajo", exact: true }).focus();
   await page.keyboard.press("Enter"); // abre Trabajo
   await page.getByRole("button", { name: "Completar Informe mensual" }).waitFor();
-  await page.waitForTimeout(800);
+  await page.waitForTimeout(1200);
   await page.evaluate(() => {
     window.__frames = new Set();
-    const svg = document.querySelector("svg");
-    const tick = () => {
-      window.__frames.add([...svg.querySelectorAll("path[fill^='url(']")].map((p) => p.getAttribute("d")).join("|"));
-      window.__raf = requestAnimationFrame(tick);
-    };
+    const c = document.querySelector("canvas");
+    const tick = () => { window.__frames.add(c.dataset.water); window.__raf = requestAnimationFrame(tick); };
     tick();
   });
   await page.getByRole("button", { name: "Completar Informe mensual" }).click();
-  await page.waitForTimeout(1200);
-  const n = await page.evaluate(() => { cancelAnimationFrame(window.__raf); return window.__frames.size; });
+  // El render por software de este entorno es lento: se espera a que el nivel llegue a su valor final.
+  await page.waitForFunction(() => document.querySelector("canvas").dataset.water.split(",")[1] === "0.000", null, { timeout: 20000 }).catch(() => {});
+  const r = await page.evaluate(() => { cancelAnimationFrame(window.__raf); return { seen: [...window.__frames].map((w) => Number(w.split(",")[1])), last: document.querySelector("canvas").dataset.water }; });
   await ctx.close();
-  return n;
+  return r;
 }
 async function motion() {
   const normal = await distinctFrames("no-preference");
   const reduced = await distinctFrames("reduce");
-  console.log(`  cuadros distintos del agua: normal=${normal}, reducido=${reduced}`);
-  check("Movimiento normal: el nivel se anima en varios cuadros", normal > 3, `cuadros distintos=${normal}`);
-  check("Movimiento reducido: el nivel cambia sin animación (≤ 2 estados)", reduced <= 2, `cuadros distintos=${reduced}`);
+  // Trabajo pasa de 0,375 a 0: en normal debe verse al menos un valor intermedio; en reducido, ninguno.
+  const mid = (r) => r.seen.filter((v) => v > 0.001 && v < 0.374);
+  console.log(`  niveles de Trabajo observados: normal=${JSON.stringify(normal.seen)}, reducido=${JSON.stringify(reduced.seen)}`);
+  check("Movimiento normal: el agua baja pasando por niveles intermedios", mid(normal).length >= 1, `vistos=${JSON.stringify(normal.seen)}`);
+  check("Movimiento reducido: el nivel cambia de una vez, sin intermedios", mid(reduced).length === 0, `vistos=${JSON.stringify(reduced.seen)}`);
+  check("Ambos terminan en el mismo nivel final", normal.last === reduced.last, `${normal.last} vs ${reduced.last}`);
 }
 
 // ---------- 4. Cerebro con 2 y 8 áreas ----------
+/** Proporción de píxeles de la captura que no son el fondo crema: detecta un lienzo en blanco. */
+async function inkRatio(page, buf) {
+  return page.evaluate(async (b64) => {
+    const img = new Image();
+    img.src = "data:image/png;base64," + b64;
+    await img.decode();
+    const c = document.createElement("canvas");
+    c.width = img.width; c.height = img.height;
+    const g = c.getContext("2d");
+    g.drawImage(img, 0, 0);
+    const d = g.getImageData(0, 0, c.width, c.height).data;
+    const bg = [d[0], d[1], d[2]];
+    let ink = 0;
+    for (let i = 0; i < d.length; i += 4) if (Math.abs(d[i] - bg[0]) + Math.abs(d[i + 1] - bg[1]) + Math.abs(d[i + 2] - bg[2]) > 36) ink++;
+    return ink / (d.length / 4);
+  }, buf.toString("base64"));
+}
+
 async function brainCounts() {
   const longName = "Nombre de área de cuarenta caracteres!!"; // 39–40 caracteres
   const sets = {
@@ -818,40 +843,84 @@ async function brainCounts() {
       const st = freshState(names);
       const { ctx, page } = await newPage({ st, width, height: 900 });
       await page.goto(`${BASE}/equilibrio`);
-      await page.getByText("Hola, Ana").waitFor({ timeout: 20000 });
-      await page.waitForTimeout(800);
-      const info = await page.evaluate(() => {
-        const svg = document.querySelector("svg");
-        const box = svg.getBoundingClientRect();
-        const texts = [...svg.querySelectorAll("text")].map((t) => ({ s: t.textContent, r: t.getBoundingClientRect(), p: t.parentElement }));
-        const overlaps = [];
-        for (let i = 0; i < texts.length; i++) for (let j = i + 1; j < texts.length; j++) {
-          if (texts[i].p === texts[j].p) continue; // líneas del mismo nombre
-          // Cajas alineadas a los ejes de texto levemente rotado: se usa el 70 % central para no marcar
-          // falsos positivos en esquinas vacías (la garantía exacta está en las pruebas unitarias).
-          const shrink = (r) => ({ l: r.left + r.width * 0.15, rr: r.right - r.width * 0.15, t: r.top + r.height * 0.15, b: r.bottom - r.height * 0.15 });
-          const a = shrink(texts[i].r), b = shrink(texts[j].r);
-          if (a.l < b.rr && b.l < a.rr && a.t < b.b && b.t < a.b) overlaps.push(texts[i].s + " × " + texts[j].s);
-        }
-        const outside = texts.filter((t) => t.r.left < box.left - 1 || t.r.right > box.right + 1 || t.r.top < box.top - 1 || t.r.bottom > box.bottom + 1).map((t) => t.s);
-        const smallest = Math.min(...texts.map((t) => parseFloat(getComputedStyle(svg.querySelector("text")).fontSize) * (box.width / 400)));
-        return { labels: texts.map((t) => t.s), overlaps, outside, radios: svg.querySelectorAll("[role=radio]").length, smallest };
-      });
+      await page.getByText(width > 900 ? "¿Dónde necesita atención tu día?" : "Un paso a la vez").waitFor({ timeout: 20000 });
+      await page.locator('canvas[data-ready="1"]').waitFor({ timeout: 45000 });
+      await page.waitForTimeout(2500);
       const tag = `${n} áreas, ${width}px`;
-      check(`Cerebro ${tag}: un sector y una etiqueta por área`, info.radios === Number(n) && names.every((nm) => info.labels.join("").replace(/\s+/g, "").includes(nm.replace(/\s+/g, "").slice(0, 8))), `radios=${info.radios}, etiquetas=${info.labels.length}`);
-      check(`Cerebro ${tag}: etiquetas sin superponerse`, info.overlaps.length === 0, info.overlaps.join("; "));
-      check(`Cerebro ${tag}: etiquetas dentro del dibujo`, info.outside.length === 0, info.outside.join("; "));
+      const info = await page.evaluate(() => {
+        const c = document.querySelector("canvas");
+        const box = c.getBoundingClientRect();
+        return { water: c.dataset.water.split(",").length, w: box.width, h: box.height, radios: document.querySelectorAll("[role=radio]").length };
+      });
+      check(`Cerebro 3D ${tag}: una pileta (nivel de agua) y un radio de leyenda por área`, info.water === Number(n) && info.radios === Number(n), `agua=${info.water}, radios=${info.radios}`);
+      check(`Cerebro 3D ${tag}: el lienzo ocupa el ancho disponible`, info.w > (width === 390 ? 330 : 400), `ancho=${Math.round(info.w)}`);
+      const ink = await inkRatio(page, await page.locator("canvas").screenshot());
+      check(`Cerebro 3D ${tag}: el lienzo dibuja el cerebro (no está en blanco)`, ink > 0.3, `tinta=${(ink * 100).toFixed(0)} %`);
       await shot(page, `7-cerebro-${n}-areas-${width}`);
-      // La lista alternativa muestra todas las áreas con su carga.
       const listed = await page.evaluate((ns) => ns.filter((x) => document.body.innerText.includes(x)).length, names.map((x) => x.slice(0, 12)));
-      check(`Cerebro ${tag}: la lista alternativa muestra todas`, listed === names.length, `${listed}/${names.length}`);
+      check(`Cerebro 3D ${tag}: la lista alternativa muestra todas`, listed === names.length, `${listed}/${names.length}`);
       await ctx.close();
     }
   }
 }
 
+// ---------- 5. Sin WebGL: vista simplificada ----------
+async function noWebGL() {
+  const st = freshState();
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 900 } });
+  await ctx.addInitScript((s) => localStorage.setItem("sb-localhost-auth-token", JSON.stringify(s)), session);
+  await ctx.addInitScript(() => {
+    const orig = HTMLCanvasElement.prototype.getContext;
+    HTMLCanvasElement.prototype.getContext = function (type, ...rest) {
+      return /webgl/i.test(String(type)) ? null : orig.call(this, type, ...rest);
+    };
+  });
+  await installApi(ctx, st);
+  const page = await ctx.newPage();
+  page.on("pageerror", (e) => errors.push("pageerror: " + e.message));
+  await page.goto(`${BASE}/equilibrio`);
+  await page.getByText("Un paso a la vez").waitFor({ timeout: 20000 });
+  await page.locator("svg [role=radio]").first().waitFor({ timeout: 10000 });
+  check("Sin WebGL: se muestra el dibujo plano con una pileta seleccionable por área", (await page.locator("svg [role=radio]").count()) === 4 && (await page.locator("canvas").count()) === 0);
+  check("Sin WebGL: la lista de carga por área sigue ahí", /Casa[\s\S]*3 de 8/.test(await body(page)));
+  await shot(page, "7-sin-webgl");
+  await ctx.close();
+}
+
+// ---------- 6. Escenario visual: los datos de la referencia ----------
+async function visual() {
+  const st = freshState();
+  const nowIso = new Date().toISOString();
+  st.tasks = [
+    mkTask("v1", "a1", "Lavar la ropa", { weight: 3 }), mkTask("v2", "a1", "Ordenar el cuarto", { weight: 3 }),
+    mkTask("v3", "a2", "Responder correos", { weight: 1 }), mkTask("v4", "a2", "Preparar la reunión", { weight: 1 }),
+    mkTask("v5", "a2", "Cerrar el informe", { status: "completed", completed_at: nowIso }),
+    mkTask("v6", "a2", "Enviar la factura", { status: "completed", completed_at: nowIso }),
+    mkTask("h1", "a3", "Pedir turno de control", { weight: 1, estimate_minutes: 10 }),
+    mkTask("h2", "a3", "Salir a caminar", { weight: 2, estimate_minutes: 15 }),
+    mkTask("h3", "a3", "Preparar una merienda", { weight: 2, estimate_minutes: 10 }),
+    mkTask("s1", "a4", "Llamar a una amiga", { weight: 2 }), mkTask("s2", "a4", "Armar el plan del sábado", { weight: 2 }),
+  ];
+  st.plans[TODAY] = { id: "planV", closed_at: null, available_minutes: null, areas: [{ area_id: "a3", moment: null, planned_minutes: null }], items: [] };
+  for (const [name, vp] of [["1-equilibrio", { width: 390, height: 844 }], ["1b-equilibrio-escritorio", { width: 1200, height: 800 }]]) {
+    const { ctx, page } = await newPage({ st, width: vp.width, height: vp.height });
+    await page.goto(`${BASE}/equilibrio`);
+    await page.getByText(vp.width > 900 ? "¿Dónde necesita atención tu día?" : "Un paso a la vez").waitFor({ timeout: 20000 });
+    await page.locator('canvas[data-ready="1"]').waitFor({ timeout: 45000 });
+    await page.waitForTimeout(2500);
+    if (vp.width === 390) {
+      const t = await body(page);
+      check("Equilibrio (referencia): sugiere Salud con motivo verificable (elegida hoy; ya avanzaste en Trabajo)", t.includes("¿Le damos un ratito a Salud?") && t.includes("Ya avanzaste en Trabajo."));
+      check("Equilibrio (referencia): muestra primero las tareas chicas de Salud con su duración", /Pedir turno de control[\s\S]*10 min/.test(t) && t.indexOf("Pedir turno de control") < t.indexOf("Salir a caminar"));
+      await axe(page, "Equilibrio (referencia)");
+    }
+    await shot(page, name);
+    await ctx.close();
+  }
+}
+
 // ---------- ejecución ----------
-for (const [name, fn] of [["Recorridos", flows], ["Rutinas", routines], ["Mi día", dayPlan], ["Tareas repetidas", recurring], ["Teclado y accesibilidad", keyboardAndA11y], ["Movimiento", motion], ["Cerebro 2 y 8 áreas", brainCounts]]) {
+for (const [name, fn] of [["Recorridos", flows], ["Rutinas", routines], ["Mi día", dayPlan], ["Tareas repetidas", recurring], ["Teclado y accesibilidad", keyboardAndA11y], ["Movimiento", motion], ["Cerebro 2 y 8 áreas", brainCounts], ["Sin WebGL", noWebGL], ["Equilibrio visual", visual]]) {
   console.log(`\n== ${name}`);
   const before = results.length;
   try { await fn(); } catch (e) { check(`${name}: el recorrido terminó sin excepción`, false, String(e.message).split("\n")[0]); }

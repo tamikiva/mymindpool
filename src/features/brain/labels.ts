@@ -72,22 +72,28 @@ function truncateToFit(words: string[], capacity: number, maxLines: number): str
  * Nunca baja de MIN_FONT: si no entra, se acorta con «…» (el nombre completo queda en la lista
  * y en la etiqueta accesible).
  */
-export function layoutLabel(name: string, maxWidth: number, maxHeight = Infinity): LabelLayout {
+export function layoutLabel(name: string, maxWidth: number, maxHeight = Infinity, maxFont = MAX_FONT, minFont = MIN_FONT): LabelLayout {
   const clean = name.trim().replace(/\s+/g, " ") || " ";
   const words = clean.split(" ");
   let best: { lines: string[]; font: number } | null = null;
   for (let k = 1; k <= Math.min(MAX_LINES, words.length); k++) {
     const lines = partition(words, k);
     const longest = Math.max(...lines.map((l) => l.length), 1);
-    const font = Math.min(MAX_FONT, maxWidth / (longest * CHAR_W), maxHeight / (lines.length * LINE_H));
+    const font = Math.min(maxFont, maxWidth / (longest * CHAR_W), maxHeight / (lines.length * LINE_H));
     if (!best || font > best.font + 1e-9) best = { lines, font };
   }
-  if (best && best.font >= MIN_FONT) return { lines: best.lines, fontSize: best.font, truncated: false };
+  if (best && best.font >= minFont) return { lines: best.lines, fontSize: best.font, truncated: false };
 
-  const capacity = Math.max(3, Math.floor(maxWidth / (MIN_FONT * CHAR_W)));
-  const maxLines = Math.max(1, Math.min(MAX_LINES, Math.floor(maxHeight / (MIN_FONT * LINE_H))));
-  const lines = truncateToFit(words, capacity, maxLines);
-  return { lines, fontSize: MIN_FONT, truncated: lines.join(" ").replace(/…/g, "") !== clean };
+  const capacity = Math.max(3, Math.floor(maxWidth / (minFont * CHAR_W)));
+  const maxLines = Math.max(1, Math.min(MAX_LINES, Math.floor(maxHeight / (minFont * LINE_H))));
+  return truncatedLayout(clean, capacity, maxLines, minFont);
+}
+
+/** El nombre acortado con «…» para que entre en `maxLines` líneas de `capacity` caracteres, a tamaño mínimo. */
+export function truncatedLayout(name: string, capacity: number, maxLines: number, minFont = MIN_FONT): LabelLayout {
+  const clean = name.trim().replace(/\s+/g, " ") || " ";
+  const lines = truncateToFit(clean.split(" "), Math.max(3, capacity), Math.max(1, Math.min(MAX_LINES, maxLines)));
+  return { lines, fontSize: minFont, truncated: lines.join(" ").replace(/…/g, "") !== clean };
 }
 
 /** Tamaño aproximado del bloque de texto ya resuelto, en unidades del dibujo. */

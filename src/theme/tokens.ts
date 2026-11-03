@@ -1,6 +1,9 @@
 // Tokens iniciales del PRD §2. Sujetos a ajuste visual; no son una extracción exacta del boceto.
 export const palette = {
-  background: "#FAF9FC",
+  // Fondo crema (referencias visuales); el #FAF9FC del PRD §2 era más frío.
+  background: "#FCF8F2",
+  card: "#FFFFFF",
+  border: "#EFE6DA",
   text: "#392747",
   textMuted: "#6B5B7B",
   // Más oscuro que el #8065C4 del PRD §2: ese no llega a 4,5:1 como texto sobre el fondo claro (PRD pide verificar contraste).
@@ -19,3 +22,16 @@ export const areaColors = [
   { key: "malva", fill: "#D5B3E8", deep: "#7A3FA0" },
   { key: "cielo", fill: "#A9D8E8", deep: "#2A6F86" },
 ] as const;
+
+/** Tarjetas de las referencias: blancas, esquinas amplias y sombra suave. */
+export const card = {
+  backgroundColor: palette.card,
+  borderRadius: 24,
+  borderWidth: 1,
+  borderColor: palette.border,
+  shadowColor: "#3a2a4d",
+  shadowOpacity: 0.07,
+  shadowRadius: 18,
+  shadowOffset: { width: 0, height: 8 },
+  elevation: 2,
+} as const;

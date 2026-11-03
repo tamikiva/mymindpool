@@ -13,7 +13,9 @@ Expo SDK 57 + React Native 0.86 + TypeScript 6 + Expo Router, con soporte web (`
 ## D-003 · Supabase propio
 Se usará un proyecto Supabase **nuevo y exclusivo** de My MindPool (pedido de la usuaria: no mezclar con el de Jaime). Aún no existe; el código no lo necesita hasta el hito 1. Variables: ver `.env.example`.
 
-## D-004 · Cerebro del hito 0
+## D-004 · Cerebro del hito 0 — ahora es la vista simplificada
+> Desde D-014 el cerebro principal es 3D (web). Este dibujo plano en SVG queda como **vista simplificada**: se usa en iOS/Android hasta tener una versión nativa, y en web si WebGL no está disponible o se pierde el contexto.
+
 Render 2.5D con SVG (`react-native-svg`): silueta festoneada dividida en 2–8 sectores por ángulo, piso translúcido, nombre del área escrito **en el piso** y agua semitransparente encima (el nombre se ve a través del agua en cualquier nivel), onda baja fija, transición breve del nivel desactivable. Selección por toque/teclado y vista de lista equivalente.
 - Web: los grupos usan `role="radio"` + `aria-checked` + `tabIndex`. `role="button"`/`onPress` en `<G>` hacen que react-native-web emita un `<button>` dentro del SVG y la pileta no se dibuja.
 - Pendiente de aprobación visual: la silueta actual es abstracta (no cerebro reconocible) y falta profundidad (paredes con espesor, brillo). Es un ensayo del motor, no el arte final.
@@ -60,4 +62,22 @@ La acción primaria pasa de `#8065C4` (PRD §2) a `#6A4FB3`: el original da 4,37
 - **Postgres local (PGlite)**: migraciones, RLS entre usuarias, idempotencia y atomicidad (`tests/*.test.ts`).
 - **Navegador con API simulada** (`npm run ui-check`): recorridos, teclado, axe-core (WCAG 2.1 AA), movimiento reducido y cerebro con 2 y 8 áreas. **No** valida nada del servidor real.
 - **Supabase real** (`npm run validate:supabase`, guía en `docs/VALIDACION_SUPABASE.md`): todavía **no se corrió**. Son tres niveles distintos y se reportan por separado.
+
+## D-014 · Cerebro 3D procedural con three.js (2026-11-03)
+Las referencias visuales (piletas con volumen, borde cerámico, agua translúcida) no se logran con el dibujo plano del hito 0, y una imagen fija no sirve porque los niveles responden a los datos. Se evaluaron tres técnicas:
+- **Imagen estática o capas pre-dibujadas:** descartadas. Harían falta cientos de imágenes (cada cantidad de áreas, 2–8, por cada nivel de agua) y arte que no se puede producir por código.
+- **3D procedural con three.js (elegida):** todo se genera desde las áreas. Silueta de cerebro y piletas por campos de distancia (`brain3d/layout.ts`), borde y base extruidos con bisel, paredes interiores, piso con baldosas, agua translúcida con reflejos, ondas y cáusticas, flotadores, escalera y plantas. El nivel del agua es una altura que se anima hacia el dato.
+- Solo web por ahora (primera entrega del PRD). Se carga three.js (~0,8 MB más de JavaScript: 1,5 → 2,3 MB sin comprimir).
+Accesibilidad: el lienzo es `role="img"` con la descripción de cada área y su carga; la **leyenda** (radios enfocables) es la forma accesible de elegir una pileta, y la lista «Carga por área» da la misma información en texto. Con «reducir movimiento» no hay animación (ni siquiera al cargar). Se dibuja ~20 veces por segundo en reposo y se pausa fuera de pantalla.
+**Limitaciones reales:** (1) las referencias son renders fotorrealistas; esto es 3D estilizado: sin textura de circunvoluciones en el fondo, sin refracción real y con adornos simples. (2) Solo se midió con render por software; falta probar en un iPhone real y Safari. (3) En nativo todavía se ve el dibujo plano.
+
+## D-015 · Nombres dentro del dibujo 3D (reemplaza D-011 para el 3D) (2026-11-03)
+El nombre se ubica en la parte del piso que realmente se ve desde la cámara (la pared cercana tapa una franja), con el ángulo que mejor sigue la forma de la pileta, y se repite sobre la superficie del agua para mantener el contraste a cualquier nivel. Tamaño mínimo 12,5 (≈ 12 px en un celular). Si un nombre no entra entero se acorta con «…» **y el nombre completo está siempre en la leyenda y en la lista**.
+Garantía medida y probada (`GUARANTEED_LETTERS`): un nombre de una palabra entra entero en la pileta más chica hasta **11 letras con 2–5 áreas, 10 con 6, 6 con 7 y 5 con 8**. Es un límite físico de 8 piletas en una pantalla de celular.
+
+## D-016 · Fondo crema, tipografía y tarjetas (2026-11-03)
+Fondo `#FCF8F2` (el `#FAF9FC` del PRD §2 era más frío), tarjetas blancas de esquinas amplias con sombra suave, pestañas con íconos. Tipografía **Nunito** (sans redondeada, licencia OFL; archivos y licencia en `public/fonts`), cargada por CSS en web. Es **provisoria**: falta la aprobación definitiva (PRD §25) y la carga por peso en nativo (hito 7). El botón principal conserva `#6A4FB3` (D-012) y no el lila más claro de las referencias, porque con texto blanco no llega a 4,5:1.
+
+## D-017 · Sugerencia del próximo paso, versión inicial (2026-11-03)
+`src/domain/nextStep.ts`, determinista y con motivo verificable. Orden: (1) tarea urgente abierta, (2) área elegida hoy en el plan que todavía no completó tareas, (3) mayor carga pendiente si no es baja. «Ya avanzaste en X» solo aparece si hoy se completó algo en X. No dice «descuido» por una pileta vacía. Se puede rechazar con «Ahora no» sin cambiar datos. Falta (hito 5): tiempo registrado, metas, silencios, excepciones y «caber en el tiempo disponible».
 

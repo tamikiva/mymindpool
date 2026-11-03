@@ -12,7 +12,8 @@ Guía completa, con dónde entrar y cómo verificar cada paso: **`docs/VALIDACIO
 6. Abrir una sesión nueva y avisar a Claude, que corre `npm run validate:supabase`.
 
 ## Decisiones y materiales (PRD §25)
-4. **Aprobar visualmente el cerebro** (el arte es provisorio) y compartir los **bocetos y el logo como archivos** para dejarlos en el repo.
+4. **Aprobar o ajustar la dirección visual del cerebro 3D** (`docs/capturas/1-equilibrio.png`, `1b-…`, `7-…`) y decidir: ¿alcanza este 3D estilizado o querés invertir en arte/modelado más cercano al render fotorrealista? Compartir además los **bocetos y el logo como archivos** para dejarlos en el repo.
+4b. Decidir: nombre en pantalla (**My MindPool** del PRD vs. **En calma** de las referencias), pestañas (¿una pantalla «Áreas»?) y color del botón principal (más claro = menos contraste).
 5. Elegir **tipografía definitiva**; verificar y decidir sobre el **dominio** mymindpool.com (no se registró nada).
 6. Elegir **dónde publicar un ambiente de revisión** (hace falta para probar enlaces de confirmación/recuperación y para que veas la app sin instalar nada).
-7. Probar en **un celular real y Safari iOS** (no se puede desde acá).
+7. Probar en **un celular real y Safari iOS**: el 3D se midió solo con render por software; hace falta ver fluidez y consumo reales (no se puede desde acá).

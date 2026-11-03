@@ -2,11 +2,11 @@ import type { ReactNode } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View, type TextInputProps } from "react-native";
 import { palette } from "@/theme/tokens";
 
-export function Screen({ children }: { children: ReactNode }) {
+export function Screen({ children, wide, top }: { children: ReactNode; wide?: boolean; top?: boolean }) {
   return (
     <ScrollView
       style={{ backgroundColor: palette.background }}
-      contentContainerStyle={s.screen}
+      contentContainerStyle={[s.screen, wide && { maxWidth: 1120 }, top && { justifyContent: "flex-start" }]}
       keyboardShouldPersistTaps="handled"
     >
       {children}
@@ -68,7 +68,7 @@ export function Center({ children }: { children: ReactNode }) {
 
 const s = StyleSheet.create({
   screen: { padding: 20, gap: 14, width: "100%", maxWidth: 520, alignSelf: "center", flexGrow: 1, justifyContent: "center" },
-  title: { fontSize: 28, fontWeight: "800", color: palette.text },
+  title: { fontSize: 30, fontWeight: "800", color: palette.text, lineHeight: 36 },
   body: { fontSize: 16, lineHeight: 23, color: palette.textMuted },
   btn: { minHeight: 48, borderRadius: 24, backgroundColor: palette.primary, alignItems: "center", justifyContent: "center", paddingHorizontal: 20 },
   btnGhost: { backgroundColor: "transparent", borderWidth: 1.5, borderColor: palette.primary },

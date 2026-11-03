@@ -55,6 +55,19 @@ Limitaciones reales (lo que NO está hecho):
 - Sin sincronización entre dispositivos probada (dos dispositivos a la vez): las funciones son idempotentes y hay pruebas secuenciales, pero no concurrentes.
 - Para ver las pantallas hay que cargar las variables de Supabase y correr `npx expo start --web`; no hay ambiente de revisión publicado.
 
+## Revisión visual de Equilibrio — cerebro 3D (2026-11-03)
+Pedido: acercar la pantalla a las referencias (cerebro con volumen, piletas, agua translúcida, fondo crema, celular con cerebro protagonista, leyenda, sugerencia y tareas).
+Hecho (D-014 a D-017):
+- Cerebro 3D procedural (web) con 2 a 8 áreas; agua con niveles que salen de los datos y se animan; nombres legibles a cualquier nivel; vista simplificada si no hay WebGL.
+- Pantalla Equilibrio rehecha: encabezado, «Un paso a la vez», cerebro, leyenda accesible, tarjeta de próximo paso con motivo verificable, panel del área con tareas chicas primero, «Carga por área», pestañas con íconos; en escritorio, dos columnas.
+- 198 pruebas y `npm run ui-check` (126 comprobaciones con API simulada): teclado, axe-core, movimiento reducido, 2 y 8 áreas, sin WebGL, escenario visual con los datos de la referencia.
+Diferencias reales con la referencia (no están hechas):
+- Es 3D estilizado, no un render fotorrealista: faltan circunvoluciones en el fondo de las piletas, refracción real, reflejos finos y arte de los adornos.
+- El nombre de la app es My MindPool (PRD); las referencias dicen «En calma». Las pestañas son Equilibrio · Mi día · Tareas · Rutinas; las referencias muestran Equilibrio · Tareas · Áreas (no hay pantalla «Áreas»: se llega desde cada área).
+- No hay botón «Empezar» en las tareas: depende del temporizador (hito 4). El botón principal es más oscuro que el lila de la referencia por contraste.
+- Con 7–8 áreas en un celular los nombres largos se acortan dentro del dibujo (ver D-015).
+Sin verificar: iPhone/Safari reales y rendimiento en celulares de gama media (todo se midió con render por software); versión nativa del cerebro; lector de pantalla real.
+
 ## Cómo se verifica
 - `npm test` · `npm run typecheck` · `npm run export:web`
 - `npm run ui-check` (navegador, API simulada; usa Chromium de `PLAYWRIGHT_BROWSERS_PATH` o `CHROMIUM_PATH`)
