@@ -104,3 +104,7 @@ La silueta procedural (superelipse con lóbulos) no se reconocía como cerebro. 
 **Diferencias con la referencia:** los lóbulos finos del borde (sobre todo abajo a la izquierda) salen más suaves por el suavizado; la referencia tiene escalones y detalles que no se modelan.
 **Pendiente:** integrar y revisar el agua con esta forma; 2–8 áreas (siguen con la forma procedural anterior).
 
+## D-021 · Agua sobre la silueta de la referencia (4 áreas) (2026-11-03)
+Con la forma aprobada se revisó el agua en la cámara final con niveles variados y extremos (3 % y 97 %): el nivel se lee contra la pared y por el color. Cambios: **un solo nombre** por pileta, dibujado después del agua y sin escribir profundidad (antes había una copia sobre la superficie que se veía doble por la perspectiva); los flotadores se alejan más del nombre; **la escalera se apagó** (con las paredes nuevas quedaba flotando fuera del borde). Siguen apagadas las plantas.
+**Pendiente:** 2–8 áreas (hoy usan la forma procedural anterior; hace falta decidir cómo derivar una silueta de cerebro para otras cantidades) y los detalles finos de la referencia (lóbulos del borde más marcados, escalones).
+

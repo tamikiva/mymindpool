@@ -55,6 +55,9 @@ Limitaciones reales (lo que NO está hecho):
 - Sin sincronización entre dispositivos probada (dos dispositivos a la vez): las funciones son idempotentes y hay pruebas secuenciales, pero no concurrentes.
 - Para ver las pantallas hay que cargar las variables de Supabase y correr `npx expo start --web`; no hay ambiente de revisión publicado.
 
+## Agua sobre la silueta aprobada (2026-11-03, quinta pasada)
+Ver D-021. Silueta de 4 áreas **aprobada**. 192 pruebas y 128 comprobaciones del navegador (datos simulados). Pendiente: 2–8 áreas; sin verificar en iPhone real.
+
 ## Silueta de cerebro trazada de la referencia (2026-11-03, cuarta pasada)
 Ver D-020. Captura de la forma sin agua ni adornos junto a la referencia: `forma-4-areas.png`. 4 áreas usan el contorno trazado; 2–8 siguen pendientes. 192 pruebas y 128 comprobaciones del navegador pasan (datos simulados).
 

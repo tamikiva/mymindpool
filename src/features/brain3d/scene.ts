@@ -323,8 +323,6 @@ interface Pool {
   wallWater: THREE.Mesh;
   caustics: THREE.Mesh;
   label: THREE.Mesh;
-  /** Copia del nombre sobre la superficie: mantiene el contraste cuando el agua está alta. */
-  labelTop: THREE.Mesh;
   hit: THREE.Mesh;
   ring: THREE.Mesh;
   deep: string;
@@ -592,14 +590,11 @@ export class BrainScene {
     // Nombre en el fondo, visible a través del agua.
     const label = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false, toneMapped: false }));
     label.position.y = 0.012;
-    label.renderOrder = 2;
-    label.visible = false; // hasta tener su texto: si no, se vería un cuadrado blanco de 1×1
+    // Se dibuja DESPUÉS del agua (sin escribir profundidad): se lee nítido a cualquier nivel y las paredes
+    // cercanas igual lo tapan. Oculto hasta tener su texto (si no, se vería un cuadrado blanco de 1×1).
+    label.renderOrder = 5;
+    label.visible = false;
     group.add(label);
-    const labelTop = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false, toneMapped: false, opacity: 0 }));
-    labelTop.renderOrder = 5;
-    labelTop.visible = false;
-    group.add(labelTop);
-
     // Agua: volumen (de piso a superficie) escalado en altura, más una hoja con ondas arriba.
     const inset = offsetPolygon(poly, -0.012);
     const waterMat = new THREE.MeshPhysicalMaterial({
@@ -645,7 +640,7 @@ export class BrainScene {
     ring.visible = area.id === this.selected;
     group.add(ring);
 
-    const pool: Pool = { id: area.id, name: "", deep: "", poly, group, water, surface, waterline, wallWater, caustics, label, labelTop, hit, ring, current: this.reduce ? clamp01(area.level) : 0, target: clamp01(area.level) };
+    const pool: Pool = { id: area.id, name: "", deep: "", poly, group, water, surface, waterline, wallWater, caustics, label, hit, ring, current: this.reduce ? clamp01(area.level) : 0, target: clamp01(area.level) };
     this.pools.push(pool);
     if (this.opts.labels !== false) this.enqueueLabel(pool, area);
     this.applyLevel(pool);
@@ -698,16 +693,7 @@ export class BrainScene {
     // En el plano del piso (x, z = y del dibujo) girar «angle» hacia abajo equivale a rotar -angle sobre y.
     pool.label.rotation.y = -angle;
     pool.label.visible = true;
-    pool.labelTop.visible = true;
     pool.label.userData.center = { x: cx / LABEL_SCALE, y: cy / LABEL_SCALE, w, h };
-    const top = pool.labelTop.material as THREE.MeshBasicMaterial;
-    top.map = mat.map;
-    top.needsUpdate = true;
-    pool.labelTop.geometry.dispose();
-    pool.labelTop.geometry = new THREE.PlaneGeometry(w, h).rotateX(-Math.PI / 2);
-    pool.labelTop.position.set(cx / LABEL_SCALE, 0.02, cy / LABEL_SCALE);
-    pool.labelTop.rotation.y = -angle;
-    pool.labelTop.userData.baseZ = cy / LABEL_SCALE;
   }
 
   /** Altura del agua, opacidad según profundidad y visibilidad del brillo del fondo. */
@@ -723,10 +709,6 @@ export class BrainScene {
     p.caustics.visible = has;
     p.water.scale.y = Math.max(h, 1e-4);
     p.surface.position.y = h + 0.003;
-    p.labelTop.position.y = h + 0.012;
-    // Más alto y más cerca de la cámara: así se proyecta justo sobre el nombre del fondo (sin verse doble).
-    p.labelTop.position.z = ((p.labelTop.userData.baseZ as number | undefined) ?? 0) + h / Math.tan(TILT);
-    (p.labelTop.material as THREE.MeshBasicMaterial).opacity = has ? 0.82 * Math.min(1, Math.max(0, (p.current - 0.15) / 0.5)) : 0;
     (p.water.material as THREE.MeshPhysicalMaterial).opacity = 0.14 + 0.72 * p.current;
     // Las cáusticas y la hoja de ondas solo existen con agua: casi sin agua, el fondo se ve limpio.
     const wet = Math.min(1, Math.max(0, (p.current - 0.04) / 0.3));
@@ -758,7 +740,8 @@ export class BrainScene {
     });
 
     // Escalera en el borde trasero de una pileta.
-    const ladderPool = this.pools.find((_, i) => i % 4 === 1 && layout.pools[i].area >= 4);
+    // La escalera está apagada por ahora: con las paredes nuevas no encaja en el borde.
+    const ladderPool = undefined as Pool | undefined;
     if (ladderPool) {
       const back = ladderPool.poly.reduce((m, p) => (p.y < m.y ? p : m), ladderPool.poly[0]);
       const steel = new THREE.MeshStandardMaterial({ color: 0xe9eef2, metalness: 0.85, roughness: 0.22, envMapIntensity: 1.2 });
@@ -817,7 +800,7 @@ export class BrainScene {
         const edge = Math.min(...pool.poly.map((q) => Math.hypot(q.x - x, q.y - y)));
         if (edge < clearance) continue;
         const away = c ? Math.hypot((x - c.x) / (c.w / 2 + 0.5), (y - c.y) / (c.h / 2 + 0.5)) : 1;
-        if (away < 1.1) continue;
+        if (away < 1.7) continue;
         const score = edge + away;
         if (!best || score > best.score) best = { p, score };
       }
