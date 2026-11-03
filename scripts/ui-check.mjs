@@ -70,7 +70,7 @@ function freshState(areaNames) {
   ].filter((t) => areas.some((a) => a.id === t.area_id));
   // Con muchas áreas, cargas variadas para ver distintos niveles de agua.
   areas.slice(4).forEach((a, i) => tasks.push(mkTask("x" + i, a.id, "Pendiente " + a.name, { weight: ((i % 3) + 1) })));
-  return { areas, tasks, failNextWrite: false, n: 10, templates: [], tsteps: [], runs: [], rsteps: [], rid: 0, plans: {} };
+  return { areas, tasks, failNextWrite: false, n: 10, templates: [], tsteps: [], runs: [], rsteps: [], rid: 0, plans: {}, rules: [], rtasks: [], occs: [] };
 }
 
 const NO_ROWS = { code: "PGRST116", details: "The result contains 0 rows", message: "JSON object requested, multiple (or no) rows returned" };
@@ -103,6 +103,50 @@ async function installApi(ctx, st) {
       if (u.pathname.endsWith("/complete_task") && t && t.status === "pending") { t.status = "completed"; t.completed_at = new Date().toISOString(); }
       if (u.pathname.endsWith("/undo_complete_task") && t && t.status === "completed") { t.status = "pending"; t.completed_at = null; }
       return route.fulfill(json(null));
+    }
+    if (u.pathname === "/rest/v1/recurring_tasks") return route.fulfill(json(st.rtasks.filter((t) => !t.archived).map(({ archived, ...t }) => t)));
+    if (u.pathname === "/rest/v1/recurrence_rules") return route.fulfill(json(st.rules));
+    if (u.pathname === "/rest/v1/task_occurrences") {
+      const stt = q("status"); const od = q("occurrence_date");
+      let rows = st.occs;
+      if (stt?.startsWith("eq.")) rows = rows.filter((o) => o.status === stt.slice(3));
+      if (stt?.startsWith("in.")) rows = rows.filter((o) => stt.slice(4, -1).split(",").includes(o.status));
+      if (od?.startsWith("lte.")) rows = rows.filter((o) => o.occurrence_date <= od.slice(4));
+      if (od?.startsWith("eq.")) rows = rows.filter((o) => o.occurrence_date === od.slice(3));
+      return route.fulfill(json(rows));
+    }
+    if (/\/rpc\/(save_recurring_task|ensure_occurrences|set_occurrence_state|archive_recurring_task)$/.test(u.pathname)) {
+      const b = JSON.parse(req.postData());
+      const fn = u.pathname.split("/").pop();
+      if (st.failNextWrite && fn !== "ensure_occurrences") { st.failNextWrite = false; return route.fulfill(json({ message: "boom", code: "XX000" }, 500)); }
+      const day = (d) => new Date(d + "T00:00:00Z");
+      if (fn === "save_recurring_task") {
+        let id = b.p_id;
+        const rule = { frequency: b.p_frequency, interval_count: b.p_interval, weekdays: b.p_weekdays, start_date: b.p_start, end_date: b.p_end };
+        if (!id) { id = "rt" + ++st.rid; st.rules.push({ id: "r" + id, ...rule }); st.rtasks.push({ id, rule_id: "r" + id, area_id: b.p_area_id, title: b.p_title, note: b.p_note, weight: b.p_weight, priority: b.p_priority }); }
+        else { Object.assign(st.rules.find((r) => r.id === "r" + id), rule); Object.assign(st.rtasks.find((t) => t.id === id), { area_id: b.p_area_id, title: b.p_title, weight: b.p_weight }); st.occs = st.occs.filter((o) => !(o.recurring_task_id === id && o.status === "pending" && o.occurrence_date >= b.p_today)); }
+        return route.fulfill(json(id));
+      }
+      if (fn === "archive_recurring_task") { st.rtasks.find((t) => t.id === b.p_id).archived = true; st.occs = st.occs.filter((o) => !(o.recurring_task_id === b.p_id && o.status === "pending" && o.occurrence_date >= b.p_today)); return route.fulfill(json(null)); }
+      if (fn === "set_occurrence_state") {
+        const o = st.occs.find((x) => x.id === b.p_id);
+        if (b.p_action === "complete" && o.status === "pending") o.status = "done";
+        if (b.p_action === "skip" && o.status === "pending") o.status = "skipped";
+        if (b.p_action === "undo") o.status = "pending";
+        return route.fulfill(json(o.status));
+      }
+      let made = 0;
+      for (const t of st.rtasks.filter((x) => !x.archived)) {
+        const r = st.rules.find((x) => x.id === t.rule_id);
+        for (let d = day(b.p_from); d <= day(b.p_to); d = new Date(d.getTime() + 86400000)) {
+          const ds = d.toISOString().slice(0, 10);
+          const dow = d.getUTCDay() === 0 ? 7 : d.getUTCDay();
+          const diff = Math.round((d - day(r.start_date)) / 86400000);
+          const ok = ds >= r.start_date && (!r.end_date || ds <= r.end_date) && (r.frequency === "daily" ? diff % r.interval_count === 0 : r.weekdays.includes(dow));
+          if (ok && !st.occs.some((o) => o.recurring_task_id === t.id && o.occurrence_date === ds)) { st.occs.push({ id: "oc" + ++st.rid, recurring_task_id: t.id, occurrence_date: ds, title: t.title, area_id: t.area_id, weight: t.weight, status: "pending" }); made++; }
+        }
+      }
+      return route.fulfill(json(made));
     }
     if (u.pathname === "/rest/v1/day_plans") {
       const d = q("plan_date")?.replace("eq.", "");
@@ -573,6 +617,89 @@ async function dayPlan() {
   await b.ctx.close();
 }
 
+// ---------- 1d. Tareas repetidas ----------
+async function recurring() {
+  const st = freshState();
+  const { ctx, page } = await newPage({ st });
+  await page.goto(`${BASE}/repetidas`);
+  await page.getByText("Todavía no tenés tareas repetidas").waitFor({ timeout: 20000 });
+  check("Repetidas: estado vacío con acción clara", (await body(page)).includes("Nueva tarea repetida"));
+  await page.getByRole("button", { name: "Nueva tarea repetida" }).click();
+  await page.getByText("Nueva tarea repetida").first().waitFor({ timeout: 5000 });
+
+  await page.getByRole("button", { name: "Guardar", exact: true }).click();
+  await page.getByText("Poné un título.").waitFor({ timeout: 3000 });
+  check("Sin título no guarda", st.rtasks.length === 0);
+
+  await page.getByLabel("Título").fill("Regar las plantas");
+  await page.getByRole("radio", { name: "Días de la semana" }).click();
+  await page.getByRole("button", { name: "Guardar", exact: true }).click();
+  await page.getByText("Elegí al menos un día de la semana.").waitFor({ timeout: 3000 });
+  check("Semanal sin días elegidos muestra el error y no guarda", st.rtasks.length === 0);
+  await page.getByRole("checkbox", { name: "lunes" }).click();
+  await page.getByRole("checkbox", { name: "jueves" }).click();
+  await page.getByLabel("Empieza (AAAA-MM-DD)").fill("2026-02-31");
+  await page.getByRole("button", { name: "Guardar", exact: true }).click();
+  await page.getByText("Usá el formato AAAA-MM-DD").first().waitFor({ timeout: 3000 });
+  check("Fecha de comienzo imposible se marca y no guarda", st.rtasks.length === 0);
+  await page.getByLabel("Empieza (AAAA-MM-DD)").fill(TODAY);
+  check("La vista previa describe la regla y lista las próximas fechas", /Todas las semanas: lunes y jueves\. Próximas: \d{4}-\d{2}-\d{2}/.test(await body(page)));
+  await shot(page, "18-repetida-editor");
+
+  st.failNextWrite = true;
+  await page.getByRole("button", { name: "Guardar", exact: true }).click();
+  await page.getByText("Algo no salió como esperábamos").waitFor({ timeout: 5000 });
+  check("Un fallo al guardar conserva lo escrito", (await page.getByLabel("Título").inputValue()) === "Regar las plantas" && st.rtasks.length === 0);
+  await page.getByRole("button", { name: "Guardar", exact: true }).click();
+  await page.getByText("Regar las plantas").first().waitFor({ timeout: 8000 });
+  check("Reintentar guarda una sola tarea repetida", st.rtasks.length === 1 && st.rules.length === 1);
+  await shot(page, "19-repetidas-lista");
+
+  // Tareas: se generan las repeticiones y se resuelven de a una
+  const daily = freshState();
+  const d = await newPage({ st: daily });
+  daily.rules.push({ id: "rr1", frequency: "daily", interval_count: 1, weekdays: [], start_date: "2026-10-01", end_date: null });
+  daily.rtasks.push({ id: "rt1", rule_id: "rr1", area_id: "a1", title: "Tomar la medicación", note: null, weight: 2, priority: "normal" });
+  // Dos repeticiones vencidas sin resolver (días anteriores)
+  const dayBefore = (n) => new Date(Date.now() - n * 86400000).toLocaleDateString("sv-SE");
+  daily.occs.push({ id: "old1", recurring_task_id: "rt1", occurrence_date: dayBefore(2), title: "Tomar la medicación", area_id: "a1", weight: 2, status: "pending" });
+  daily.occs.push({ id: "old2", recurring_task_id: "rt1", occurrence_date: dayBefore(1), title: "Tomar la medicación", area_id: "a1", weight: 2, status: "pending" });
+  await d.page.goto(`${BASE}/equilibrio`);
+  await d.page.getByText("Hola, Ana").waitFor({ timeout: 20000 });
+  let t = await body(d.page);
+  check("Equilibrio: genera la repetición de hoy y solo ella suma (Casa 3 + 2 = 5 de 8; las 2 vencidas no acumulan)", /Casa[\s\S]*5 de 8/.test(t));
+  check("Se generó una sola ocurrencia por día, hoy y los 7 días siguientes (8 fechas)", daily.occs.filter((o) => o.id.startsWith("oc")).length === 8 && new Set(daily.occs.map((o) => o.occurrence_date)).size === daily.occs.length);
+
+  await d.page.goto(`${BASE}/tareas`);
+  await d.page.getByText("Repeticiones").first().waitFor({ timeout: 15000 });
+  t = await body(d.page);
+  check("Tareas: muestra la de hoy y las vencidas como repeticiones aparte", t.includes("hoy") && (t.match(/vencida:/g) ?? []).length === 2);
+  await shot(d.page, "20-tareas-repeticiones");
+  await chip(d.page, "Vencidas").click();
+  check("Vista Vencidas: solo las dos vencidas", (await d.page.getByRole("button", { name: /Completar Tomar la medicación/ }).count()) === 2);
+  await chip(d.page, "Pendientes").click();
+  await d.page.getByRole("button", { name: "Completar Tomar la medicación (repetición)" }).first().click();
+  await d.page.waitForTimeout(600);
+  const todayOcc = daily.occs.find((o) => o.occurrence_date === TODAY);
+  check("Completar una repetición solo cambia esa ocurrencia", daily.occs.filter((o) => o.status === "done").length === 1 && daily.rtasks.length === 1 && daily.occs.filter((o) => o.status === "pending").length === daily.occs.length - 1);
+  const first = daily.occs.find((o) => o.status === "done");
+  await d.page.getByRole("button", { name: /Saltar Tomar la medicación/ }).first().click();
+  await d.page.waitForTimeout(600);
+  check("Saltar no cuenta como hecha", daily.occs.filter((o) => o.status === "done").length === 1 && daily.occs.filter((o) => o.status === "skipped").length === 1);
+  await axe(d.page, "Tareas con repeticiones");
+  await d.page.goto(`${BASE}/repetidas`);
+  await d.page.getByRole("link", { name: "Editar Tomar la medicación" }).click();
+  await d.page.getByText("Editar tarea repetida").waitFor({ timeout: 8000 });
+  await axe(d.page, "Editor de tarea repetida");
+  await d.page.getByRole("button", { name: "Archivar tarea repetida" }).click();
+  check("Archivar pide confirmación", (await body(d.page)).includes("se descartan las repeticiones pendientes"));
+  await d.page.getByRole("button", { name: "Sí, archivar" }).click();
+  await d.page.getByText("Todavía no tenés tareas repetidas").waitFor({ timeout: 8000 });
+  check("Archivar descarta las pendientes de hoy en adelante y conserva lo pasado y lo resuelto", daily.occs.every((o) => o.status !== "pending" || o.occurrence_date < TODAY));
+  await d.ctx.close();
+  await ctx.close();
+}
+
 // ---------- 2. Teclado y accesibilidad ----------
 async function keyboardAndA11y() {
   const st = freshState();
@@ -724,7 +851,7 @@ async function brainCounts() {
 }
 
 // ---------- ejecución ----------
-for (const [name, fn] of [["Recorridos", flows], ["Rutinas", routines], ["Mi día", dayPlan], ["Teclado y accesibilidad", keyboardAndA11y], ["Movimiento", motion], ["Cerebro 2 y 8 áreas", brainCounts]]) {
+for (const [name, fn] of [["Recorridos", flows], ["Rutinas", routines], ["Mi día", dayPlan], ["Tareas repetidas", recurring], ["Teclado y accesibilidad", keyboardAndA11y], ["Movimiento", motion], ["Cerebro 2 y 8 áreas", brainCounts]]) {
   console.log(`\n== ${name}`);
   const before = results.length;
   try { await fn(); } catch (e) { check(`${name}: el recorrido terminó sin excepción`, false, String(e.message).split("\n")[0]); }

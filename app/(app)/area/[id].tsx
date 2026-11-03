@@ -4,6 +4,7 @@ import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { Body, Button, Center, Field, Notice, Screen, Title } from "@/components/ui";
 import { Chips } from "@/components/Chips";
 import { fetchAreas, updateArea, type Area } from "@/data/areas";
+import { fetchTodayOccurrenceLoad, syncOccurrences } from "@/data/recurring";
 import { fetchRunStepLoad } from "@/data/routines";
 import { completeTask, createTask, fetchOpenTasks, moveOpenTasks, type Task, toLoadTask } from "@/data/tasks";
 import { computeAreaLoad, type LoadBand, type LoadTask } from "@/domain/load";
@@ -20,6 +21,7 @@ export default function AreaScreen() {
   const [areas, setAreas] = useState<Area[] | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [runSteps, setRunSteps] = useState<LoadTask[]>([]);
+  const [occLoad, setOccLoad] = useState<LoadTask[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -33,10 +35,12 @@ export default function AreaScreen() {
   const load = useCallback(async () => {
     setError(null);
     try {
-      const [a, t, steps] = await Promise.all([fetchAreas(), fetchOpenTasks(), fetchRunStepLoad()]);
+      await syncOccurrences(today());
+      const [a, t, steps, occ] = await Promise.all([fetchAreas(), fetchOpenTasks(), fetchRunStepLoad(), fetchTodayOccurrenceLoad(today())]);
       setAreas(a);
       setTasks(t);
       setRunSteps(steps);
+      setOccLoad(occ);
       const me = a.find((x) => x.id === id);
       if (me) {
         setName(me.name);
@@ -74,8 +78,9 @@ export default function AreaScreen() {
   }
 
   const mine = tasks.filter((t) => t.area_id === area.id);
-  const load_ = computeAreaLoad(area.id, area.capacity, [...tasks.map(toLoadTask), ...runSteps], today());
+  const load_ = computeAreaLoad(area.id, area.capacity, [...tasks.map(toLoadTask), ...runSteps, ...occLoad], today());
   const routineSteps = runSteps.filter((r) => r.areaId === area.id).length;
+  const repeatsToday = occLoad.filter((r) => r.areaId === area.id).length;
   const others = areas.filter((a) => a.id !== area.id);
   const cap = Number(capacity);
   const capError = Number.isInteger(cap) && cap >= 1 && cap <= 100 ? null : "Usá un número entero entre 1 y 100.";
@@ -105,6 +110,7 @@ export default function AreaScreen() {
         <Text style={s.muted}>{load_.pending} de {area.capacity} puntos pendientes</Text>
         {load_.excess > 0 ? <Text style={s.muted}>{load_.excess} puntos por encima de tu referencia</Text> : null}
         {routineSteps > 0 ? <Text style={s.muted}>Incluye {routineSteps} paso{routineSteps === 1 ? "" : "s"} de rutinas en curso</Text> : null}
+        {repeatsToday > 0 ? <Text style={s.muted}>Incluye {repeatsToday} tarea{repeatsToday === 1 ? "" : "s"} repetida{repeatsToday === 1 ? "" : "s"} de hoy</Text> : null}
         {load_.pending === 0 ? <Text style={s.muted}>Sin pendientes: esta área está despejada.</Text> : null}
         <Text style={s.muted}>Tiempo registrado: sin registro</Text>
       </View>

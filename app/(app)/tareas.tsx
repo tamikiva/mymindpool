@@ -1,12 +1,13 @@
-import { Link, useFocusEffect } from "expo-router";
+import { Link, router, useFocusEffect } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { Body, Button, Center, Field, Notice, Screen, Title } from "@/components/ui";
 import { Chips } from "@/components/Chips";
 import { fetchAreas, type Area } from "@/data/areas";
+import { fetchActiveOccurrences, setOccurrence, syncOccurrences, type Occurrence } from "@/data/recurring";
 import { completeTask, createTask, fetchTasks, undoCompleteTask, type Task } from "@/data/tasks";
 import { getSupabase } from "@/data/supabase";
-import { filterTasks, type TaskView } from "@/domain/taskFilters";
+import { filterTasks, normalize, type TaskView } from "@/domain/taskFilters";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { dataErrorMessage } from "@/features/auth/messages";
 import { palette } from "@/theme/tokens";
@@ -35,6 +36,7 @@ export default function Tareas() {
   const { session } = useAuth();
   const [tasks, setTasks] = useState<Task[] | null>(null);
   const [areas, setAreas] = useState<Area[]>([]);
+  const [occs, setOccs] = useState<Occurrence[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [view, setView] = useState<TaskView>("open");
@@ -47,9 +49,11 @@ export default function Tareas() {
   const load = useCallback(async () => {
     setError(null);
     try {
-      const [t, a] = await Promise.all([fetchTasks(), fetchAreas()]);
+      await syncOccurrences(today());
+      const [t, a, o] = await Promise.all([fetchTasks(), fetchAreas(), fetchActiveOccurrences(today())]);
       setTasks(t);
       setAreas(a);
+      setOccs(o);
     } catch (e) {
       setError(dataErrorMessage(e));
     }
@@ -73,13 +77,26 @@ export default function Tareas() {
     [tasks, view, areaId, search],
   );
   const areaName = (id: string) => areas.find((a) => a.id === id)?.name ?? "";
+  // Las repeticiones se muestran en las vistas donde corresponden; las vencidas no suman al agua pero se pueden resolver acá.
+  const shownOccs = occs.filter((o) => {
+    if (areaId !== null && o.area_id !== areaId) return false;
+    if (search.trim() && !normalize(o.title).includes(normalize(search))) return false;
+    const resolved = o.status !== "pending";
+    if (view === "completed") return o.status === "done";
+    if (resolved) return view === "open" || view === "today";
+    if (view === "today") return o.occurrence_date === today();
+    if (view === "overdue") return o.occurrence_date < today();
+    return view === "open";
+  });
 
   const run = async (fn: () => Promise<void>) => {
     setBusy(true);
     setActionError(null);
     try {
       await fn();
-      setTasks(await fetchTasks());
+      const [t, o] = await Promise.all([fetchTasks(), fetchActiveOccurrences(today())]);
+      setTasks(t);
+      setOccs(o);
     } catch (e) {
       setActionError(dataErrorMessage(e));
     } finally {
@@ -131,7 +148,26 @@ export default function Tareas() {
         </>
       ) : null}
 
-      {visible.length === 0 ? <Body>{search.trim() ? "No encontramos tareas con esa búsqueda." : EMPTY[view]}</Body> : null}
+      {shownOccs.length > 0 ? <Text style={s.h}>Repeticiones</Text> : null}
+      {shownOccs.map((o) => (
+        <View key={o.id} style={s.row}>
+          <Text style={[s.title, o.status !== "pending" && s.resolved]}>
+            {o.status === "done" ? "✓ " : o.status === "skipped" ? "↷ " : "↻ "}{o.title}
+          </Text>
+          <Text style={s.muted}>
+            {areaName(o.area_id)} · {o.weight} pt · {o.status === "done" ? "hecha hoy" : o.status === "skipped" ? "saltada hoy" : o.occurrence_date === today() ? "hoy" : `vencida: ${o.occurrence_date}`}
+          </Text>
+          {o.status === "pending" ? (
+            <>
+              <Button label={`Completar ${o.title} (repetición)`} variant="ghost" disabled={busy} onPress={() => void run(() => setOccurrence(o.id, "complete"))} />
+              <Button label={`Saltar ${o.title} (repetición)`} variant="ghost" disabled={busy} onPress={() => void run(() => setOccurrence(o.id, "skip"))} />
+            </>
+          ) : (
+            <Button label={`Deshacer ${o.title} (repetición)`} variant="ghost" disabled={busy} onPress={() => void run(() => setOccurrence(o.id, "undo"))} />
+          )}
+        </View>
+      ))}
+      {visible.length === 0 && shownOccs.length === 0 ? <Body>{search.trim() ? "No encontramos tareas con esa búsqueda." : EMPTY[view]}</Body> : null}
       {visible.map((t) => (
         <View key={t.id} style={s.row}>
           <Link href={{ pathname: "/tarea/[id]", params: { id: t.id } }} style={s.main} accessibilityLabel={`Editar ${t.title}`}>
@@ -165,6 +201,7 @@ export default function Tareas() {
         />
         <Button label="Agregar" busy={busy} disabled={!draft.trim() || !target} onPress={add} />
       </View>
+      <Button label="Tareas repetidas" variant="ghost" onPress={() => router.push("/repetidas")} />
       <Button label="Cerrar sesión" variant="ghost" onPress={() => void getSupabase().auth.signOut()} />
     </Screen>
   );
@@ -174,6 +211,8 @@ const s = StyleSheet.create({
   row: { padding: 12, borderRadius: 14, borderWidth: 1, borderColor: "#E7E0F2", backgroundColor: "#fff", gap: 8 },
   main: { paddingVertical: 4 },
   title: { fontSize: 16, fontWeight: "700", color: palette.text },
+  h: { fontSize: 18, fontWeight: "800", color: palette.text, marginTop: 8 },
+  resolved: { color: palette.textMuted },
   muted: { color: palette.textMuted, fontSize: 14 },
   add: { gap: 8, marginTop: 8 },
 });

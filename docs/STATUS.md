@@ -28,19 +28,37 @@ Pendiente / limitaciones:
 - Sin Google/Apple login, sin cambio de contraseña desde Ajustes ni cierre de sesión en todas partes.
 - Exportación y eliminación de cuenta: esquema y contrato en hito 6 (las tablas ya usan `on delete cascade` desde `auth.users`).
 
-## Hito 2 — Tareas y cerebro dinámico · en curso (2026-11-03)
-Hecho:
-- Migraciones `0002_tasks.sql` (tareas con RLS, clave foránea compuesta `(area_id, user_id)`, `complete_task` / `undo_complete_task` idempotentes) y `0003_area_archive_guards.sql` (no se archiva un área con pendientes ni quedan menos de 2 áreas activas). El agua se deriva de las filas; no hay contador guardado.
-- Dominio puro de filtros (`src/domain/taskFilters.ts`): Pendientes, Hoy, Vencidas, Futuras, Más adelante y Completadas; filtro por área y búsqueda sin tildes.
-- Pantallas: **Equilibrio** (carga real, entrada rápida, completar/deshacer), **Tareas** (vistas, área, búsqueda, completar/deshacer, nueva), **Editar tarea** (título, nota, área, tamaño, prioridad, fecha con validación, más adelante, cancelar/reabrir, eliminar con confirmación), **Área** (banda de carga, excedente, pendientes, editar nombre/color/referencia, archivar moviendo pendientes). Navegación inferior Equilibrio / Tareas. Las pantallas recargan al volver a enfocarse.
-- Un fallo de escritura muestra el error y conserva lo escrito.
-- Pruebas: 54 (RLS entre usuarios, completar/deshacer una sola vez, cancelar/eliminar sin contar como realizada, tarea futura, archivado, filtros) más el typecheck y `export:web` en verde.
-- Verificado en Chromium (390 px y 1200 px) con una **API simulada**: 21 recorridos (filtros, búsqueda, completar, deshacer, error de escritura con reintento, edición, eliminar con confirmación, cancelar, renombrar y archivar área) sin errores de consola. Capturas en `docs/capturas/`.
-- Se corrigió que, con pestañas, las listas quedaban desactualizadas tras editar.
+## Hito 2 — Tareas y cerebro dinámico · código listo, sin validar con Supabase real (2026-11-03)
+Hecho (migraciones 0002 y 0003):
+- Tareas con RLS y clave foránea compuesta `(area_id, user_id)`; `complete_task` / `undo_complete_task` idempotentes; el agua se deriva de las filas.
+- Pantallas: Equilibrio (carga real), Tareas (Pendientes, Hoy, Vencidas, Futuras, Más adelante, Completadas; área; búsqueda), Editar tarea, Área (carga, excedente, edición, archivado moviendo pendientes). Un fallo de escritura muestra el error y conserva lo escrito.
+- Archivar un área valida en la base: sin pendientes y con al menos 2 áreas activas.
+- Cerebro con 2 a 8 áreas: etiquetas dentro de su sector y legibles (ver D-011); nombres largos acortados con «…» en el dibujo.
+- Accesibilidad: axe-core sin violaciones serias/críticas en todas las pantallas; foco visible; Tab/Enter/Espacio operan los controles y el cerebro; botones deshabilitados y selectores con ARIA correcto; sin desborde horizontal a 200 % de zoom; con movimiento reducido el agua cambia sin animar.
 
-Limitaciones reales:
-- **Nada se probó contra Supabase real** (faltan las variables; ver `docs/PENDIENTES_USUARIA.md`). La verificación de interfaz usó datos simulados.
-- Sin pruebas automáticas de componentes ni de las pantallas: el recorrido de Chromium se corrió a mano y su script no está en el repo.
-- No verificado: lector de pantalla, teclado, reducción de movimiento ni la onda breve al completar en el cerebro. Falta revisar el comportamiento con 2 y 8 áreas con datos.
-- Sin tiempo registrado (hito 4): el área muestra «sin registro».
-- Pospuestas del hito 2: ordenar por prioridad, recurrencias (hito 3), mover una tarea a otra área solo se hace desde Editar.
+## Hito 3 — Día y rutinas · código listo, sin validar con Supabase real (2026-11-03)
+Hecho (migraciones 0004, 0005 y 0006):
+- **Rutinas**: plantillas editables (hasta 20 pasos), acción inicial estable, versión corta, señal opcional, plantillas locales sugeridas al escribir «limpiar la casa». Ejecución de a un paso (Listo / Saltar / Pausar / Retomar / Cancelar con confirmación), secuencia completa opcional, cierre sin encadenar otra rutina. Las instancias copian los pasos; su carga cuenta en el agua.
+- **Mi día**: elegir áreas con momento y minutos, tiempo disponible (avisa si se supera, sin bloquear), tareas y rutinas del día, plan editable, cierre del día que traslada solo lo elegido.
+- **Tareas repetidas**: diarias (cada N días) y semanales (días elegidos, cada N semanas), comienzo y final. Ocurrencias con identidad propia; solo la de hoy suma al agua (D-010). Se resuelven desde Tareas.
+- Navegación: Equilibrio · Mi día · Tareas · Rutinas (Repetidas desde Tareas).
+
+Pruebas:
+- 147 pruebas (Vitest): reglas de dominio y Postgres local con RLS, atomicidad, idempotencia y la regla de recurrencia SQL cruzada con la de TypeScript día por día durante 2 años. Se comprobó con mutaciones que las pruebas detectan reglas rotas.
+- `npm run ui-check`: 119 comprobaciones en Chromium (390 y 1200 px) **con una API simulada**, sin errores de consola.
+
+Limitaciones reales (lo que NO está hecho):
+- **Nada se validó contra Supabase real** (ver `docs/VALIDACION_SUPABASE.md` y `docs/PENDIENTES_USUARIA.md`). Los tres niveles —Postgres local, navegador con API simulada y Supabase real— se reportan por separado (D-013).
+- Alcance del PRD §10–§12 que falta: frecuencia/recurrencia de **rutinas** (solo hay de tareas); las repeticiones **no entran** al plan del día; convertir una tarea en rutina; duración por paso en la interfaz (el esquema la guarda); «cuándo, dónde y después de qué acción» para hábitos más allá de la señal de la rutina; encadenar «Después de X, hago Y» entre rutinas; sugerencias de cambio de área entre pasos (hito 5).
+- «Hoy» usa la fecha del dispositivo; falta usar la zona horaria del perfil (`profiles.timezone`) y documentar cómo afecta cambiar de zona.
+- No se probó con lector de pantalla real ni con Safari iOS/dispositivos; solo axe-core, teclado y emulación de zoom/movimiento.
+- Sin sincronización entre dispositivos probada (dos dispositivos a la vez): las funciones son idempotentes y hay pruebas secuenciales, pero no concurrentes.
+- Para ver las pantallas hay que cargar las variables de Supabase y correr `npx expo start --web`; no hay ambiente de revisión publicado.
+
+## Cómo se verifica
+- `npm test` · `npm run typecheck` · `npm run export:web`
+- `npm run ui-check` (navegador, API simulada; usa Chromium de `PLAYWRIGHT_BROWSERS_PATH` o `CHROMIUM_PATH`)
+- `npm run validate:supabase` (real; requiere variables, ver `docs/VALIDACION_SUPABASE.md`)
+
+## Siguiente
+Validar contra Supabase real; después Hito 4 (tiempo y metas).

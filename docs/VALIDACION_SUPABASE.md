@@ -44,6 +44,9 @@ En el panel: **SQL Editor** → **New query**. Para cada archivo: abrilo en el r
 | 1 | `supabase/migrations/0001_profiles_areas.sql` | perfiles, áreas, onboarding y RLS |
 | 2 | `supabase/migrations/0002_tasks.sql` | tareas, completar/deshacer |
 | 3 | `supabase/migrations/0003_area_archive_guards.sql` | reglas de archivado |
+| 4 | `supabase/migrations/0004_routines.sql` | rutinas, ejecuciones y pasos |
+| 5 | `supabase/migrations/0005_day_plans.sql` | plan del día y cierre |
+| 6 | `supabase/migrations/0006_recurrences.sql` | tareas repetidas y ocurrencias |
 
 - **Verificación de cada una:** debe decir «Success. No rows returned». Si dice `already exists`, esa migración ya se había corrido: **no la repitas**, pasá a la siguiente y avisame.
 - **Verificación final:** pegá esta consulta y correla. Deben aparecer `areas`, `profiles` y `tasks`, las tres con `rowsecurity = true`:

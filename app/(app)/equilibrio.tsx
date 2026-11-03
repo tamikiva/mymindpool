@@ -2,6 +2,7 @@ import { Link, Redirect, router, useFocusEffect } from "expo-router";
 import { useCallback, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { Body, Button, Center, Field, Notice, Screen, Title } from "@/components/ui";
+import { fetchTodayOccurrenceLoad, syncOccurrences } from "@/data/recurring";
 import { fetchOpenRuns, fetchRunStepLoad, type Run } from "@/data/routines";
 import { completeTask, createTask, fetchOpenTasks, toLoadTask, undoCompleteTask, type Task } from "@/data/tasks";
 import { useAuth } from "@/features/auth/AuthProvider";
@@ -19,6 +20,7 @@ export default function Equilibrio() {
   const [error, setError] = useState<string | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [runSteps, setRunSteps] = useState<LoadTask[]>([]);
+  const [occLoad, setOccLoad] = useState<LoadTask[]>([]);
   const [runs, setRuns] = useState<Run[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
@@ -30,13 +32,15 @@ export default function Equilibrio() {
   const load = useCallback(async () => {
     setError(null);
     try {
-      const [profile, areas, open, steps, openRuns] = await Promise.all([
-        fetchProfile(), fetchAreas(), fetchOpenTasks(), fetchRunStepLoad(), fetchOpenRuns(),
+      await syncOccurrences(today());
+      const [profile, areas, open, steps, openRuns, occ] = await Promise.all([
+        fetchProfile(), fetchAreas(), fetchOpenTasks(), fetchRunStepLoad(), fetchOpenRuns(), fetchTodayOccurrenceLoad(today()),
       ]);
       setData({ profile, areas });
       setTasks(open);
       setRunSteps(steps);
       setRuns(openRuns);
+      setOccLoad(occ);
     } catch (e) {
       setError(authErrorMessage(e));
     }
@@ -59,7 +63,7 @@ export default function Equilibrio() {
   if (!data) return <Center><ActivityIndicator color={palette.primary} /></Center>;
   if (!data.profile.onboarding_completed_at) return <Redirect href="/onboarding" />;
 
-  const loads = computeBrain(data.areas, [...tasks.map(toLoadTask), ...runSteps], today());
+  const loads = computeBrain(data.areas, [...tasks.map(toLoadTask), ...runSteps, ...occLoad], today());
   const brainAreas: BrainArea[] = data.areas.map((a, i) => {
     const c = areaColors.find((x) => x.key === a.color_key) ?? areaColors[i % areaColors.length];
     return { id: a.id, name: a.name, fill: c.fill, deep: c.deep, level: loads[i].level };
