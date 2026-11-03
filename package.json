@@ -26,6 +26,8 @@
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.8",
     "@types/react": "~19.2.2",
+    "axe-core": "^4.14.0",
+    "playwright-core": "^1.56.1",
     "typescript": "~6.0.3",
     "vitest": "^4.1.11"
   },
@@ -36,7 +38,8 @@
     "ios": "expo start --ios",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "export:web": "expo export --platform web"
+    "export:web": "expo export --platform web",
+    "ui-check": "node scripts/ui-check.mjs"
   },
   "private": true
 }

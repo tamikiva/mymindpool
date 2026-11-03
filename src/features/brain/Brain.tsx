@@ -1,17 +1,16 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AccessibilityInfo, Platform } from "react-native";
 import Svg, { ClipPath, Defs, G, LinearGradient, Path, Stop, Text as SvgText } from "react-native-svg";
 import { palette } from "@/theme/tokens";
 import {
   VIEW,
-  bounds,
-  centroid,
   polygonPath,
   sectorPolygon,
   silhouettePath,
   wavePath,
 } from "./geometry";
-import { layoutLabel } from "./labels";
+import { LINE_H } from "./labels";
+import { placeLabel } from "./placement";
 
 export interface BrainArea {
   id: string;
@@ -87,13 +86,12 @@ function Pool({
   reduceMotion: boolean;
 }) {
   const level = useTween(area.level, reduceMotion);
-  const poly = sectorPolygon(index, count, 0.07);
-  const c = centroid(poly);
-  const b = bounds(poly);
-  const label = layoutLabel(area.name, (b.maxX - b.minX) * 0.62);
+  const poly = useMemo(() => sectorPolygon(index, count, 0.07), [index, count]);
+  // La búsqueda de la mejor posición es costosa: no se repite en cada cuadro de la animación.
+  const { label, cx, cy } = useMemo(() => placeLabel(poly, area.name), [poly, area.name]);
   const clipId = `clip-${area.id}`;
   const gradId = `water-${area.id}`;
-  const lineH = label.fontSize * 1.1;
+  const lineH = label.fontSize * LINE_H;
   const pct = Math.round(area.level * 100);
   const description = `${area.name}, carga pendiente ${pct} por ciento`;
   // En web `accessible` generaría un <button> HTML dentro del SVG: se usan atributos ARIA.
@@ -131,12 +129,12 @@ function Pool({
       {/* Piso de la pileta: más claro que el agua para que el nombre se lea al fondo. */}
       <Path d={polygonPath(poly)} fill={area.fill} fillOpacity={0.28} />
       {/* El nombre va en el piso, debajo del agua translúcida. */}
-      <G rotation={-8} origin={`${c.x}, ${c.y}`}>
+      <G rotation={-8} origin={`${cx}, ${cy}`}>
         {label.lines.map((line, i) => (
           <SvgText
             key={i}
-            x={c.x}
-            y={c.y + (i - (label.lines.length - 1) / 2) * lineH + label.fontSize * 0.35}
+            x={cx}
+            y={cy + (i - (label.lines.length - 1) / 2) * lineH + label.fontSize * 0.35}
             fontSize={label.fontSize}
             fontWeight="700"
             fontFamily={Platform.OS === "web" ? "system-ui, -apple-system, Segoe UI, Roboto, sans-serif" : undefined}

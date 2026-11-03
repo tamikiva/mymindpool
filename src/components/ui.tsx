@@ -25,9 +25,10 @@ export function Button({
   const off = disabled || busy;
   return (
     <Pressable
-      accessibilityRole="button"
+      role="button"
       accessibilityLabel={label}
-      accessibilityState={{ disabled: !!off, busy: !!busy }}
+      disabled={!!off}
+      aria-busy={!!busy}
       onPress={off ? undefined : onPress}
       style={[s.btn, variant === "ghost" && s.btnGhost, off && { opacity: 0.6 }]}
     >
@@ -44,7 +45,7 @@ export function Field({ label, error, ...rest }: TextInputProps & { label: strin
       <Text style={s.label}>{label}</Text>
       <TextInput
         accessibilityLabel={label}
-        placeholderTextColor="#9A8CAB"
+        placeholderTextColor="#74658A"
         {...rest}
         style={[s.input, error ? { borderColor: "#B3261E" } : null]}
       />

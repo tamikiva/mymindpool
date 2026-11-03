@@ -6,15 +6,15 @@ export function Chips<T extends string | number | null>({
   label, options, value, onChange,
 }: { label: string; options: { value: T; label: string }[]; value: T; onChange: (v: T) => void }) {
   return (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} accessibilityLabel={label} contentContainerStyle={s.row}>
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} role="radiogroup" accessibilityLabel={label} contentContainerStyle={s.row}>
       {options.map((o) => {
         const on = o.value === value;
         return (
           <Pressable
             key={String(o.value)}
-            accessibilityRole="button"
+            role="radio"
             accessibilityLabel={o.label}
-            accessibilityState={{ selected: on }}
+            aria-checked={on}
             onPress={() => onChange(o.value)}
             style={[s.chip, on && s.chipOn]}
           >

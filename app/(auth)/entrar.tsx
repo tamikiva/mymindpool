@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Button, Field, Notice, Screen, Title } from "@/components/ui";
 import { getSupabase } from "@/data/supabase";
 import { authErrorMessage, validateEmail } from "@/features/auth/messages";
+import { palette } from "@/theme/tokens";
 
 export default function Entrar() {
   const [email, setEmail] = useState("");
@@ -33,8 +34,8 @@ export default function Entrar() {
       <Field label="Contraseña" value={password} onChangeText={setPassword} secureTextEntry autoComplete="current-password" onSubmitEditing={submit} />
       {error ? <Notice kind="error">{error}</Notice> : null}
       <Button label="Entrar" onPress={submit} busy={busy} />
-      <Link href="/recuperar" style={{ color: "#8065C4", fontSize: 16, paddingVertical: 8 }}>Olvidé mi contraseña</Link>
-      <Link href="/registro" style={{ color: "#8065C4", fontSize: 16, paddingVertical: 8 }}>Crear una cuenta</Link>
+      <Link href="/recuperar" style={{ color: palette.primary, fontSize: 16, paddingVertical: 8 }}>Olvidé mi contraseña</Link>
+      <Link href="/registro" style={{ color: palette.primary, fontSize: 16, paddingVertical: 8 }}>Crear una cuenta</Link>
     </Screen>
   );
 }

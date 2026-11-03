@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Body, Button, Field, Notice, Screen, Title } from "@/components/ui";
 import { getSupabase } from "@/data/supabase";
 import { authErrorMessage, validateEmail, validatePassword } from "@/features/auth/messages";
+import { palette } from "@/theme/tokens";
 
 export default function Registro() {
   const [email, setEmail] = useState("");
@@ -52,7 +53,7 @@ export default function Registro() {
       <Field label="Contraseña (mínimo 8 caracteres)" value={password} onChangeText={setPassword} secureTextEntry autoComplete="new-password" error={pErr} />
       {error ? <Notice kind="error">{error}</Notice> : null}
       <Button label="Crear cuenta" onPress={submit} busy={busy} />
-      <Link href="/entrar" style={{ color: "#8065C4", fontSize: 16, paddingVertical: 8 }}>Ya tengo cuenta</Link>
+      <Link href="/entrar" style={{ color: palette.primary, fontSize: 16, paddingVertical: 8 }}>Ya tengo cuenta</Link>
     </Screen>
   );
 }

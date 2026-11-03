@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MAX_AREAS, MIN_AREAS, bounds, sectorPolygon, waterSurfaceY } from "./geometry";
+import { MAX_AREAS, MIN_AREAS, areaCentroid, bounds, chord, pointInPolygon, sectorPolygon, waterSurfaceY } from "./geometry";
 
 describe("geometría del cerebro", () => {
   it("soporta de 2 a 8 sectores no degenerados", () => {
@@ -20,5 +20,24 @@ describe("geometría del cerebro", () => {
     expect(waterSurfaceY(p, 0)).toBeGreaterThan(waterSurfaceY(p, 0.5));
     expect(waterSurfaceY(p, 0.5)).toBeGreaterThan(waterSurfaceY(p, 1));
     expect(waterSurfaceY(p, 2)).toBe(waterSurfaceY(p, 1));
+  });
+});
+
+describe("cuerdas y centroide por área", () => {
+  const square = [
+    { x: 0, y: 0 },
+    { x: 10, y: 0 },
+    { x: 10, y: 10 },
+    { x: 0, y: 10 },
+  ];
+  it("centroide de un cuadrado y cuerda horizontal/vertical", () => {
+    expect(areaCentroid(square)).toEqual({ x: 5, y: 5 });
+    expect(chord(square, "y", 5)).toEqual([0, 10]);
+    expect(chord(square, "x", 5)).toEqual([0, 10]);
+    expect(chord(square, "y", 20)).toBeNull();
+  });
+  it("pointInPolygon distingue dentro y fuera", () => {
+    expect(pointInPolygon({ x: 5, y: 5 }, square)).toBe(true);
+    expect(pointInPolygon({ x: 15, y: 5 }, square)).toBe(false);
   });
 });

@@ -49,6 +49,48 @@ export function centroid(pts: readonly Pt[]): Pt {
   return { x: pts.reduce((s, p) => s + p.x, 0) / n, y: pts.reduce((s, p) => s + p.y, 0) / n };
 }
 
+/** Centroide por área (shoelace): cae dentro del sector, no pegado a la pared como el promedio de vértices. */
+export function areaCentroid(pts: readonly Pt[]): Pt {
+  let a = 0;
+  let cx = 0;
+  let cy = 0;
+  for (let i = 0; i < pts.length; i++) {
+    const p = pts[i];
+    const q = pts[(i + 1) % pts.length];
+    const k = p.x * q.y - q.x * p.y;
+    a += k;
+    cx += (p.x + q.x) * k;
+    cy += (p.y + q.y) * k;
+  }
+  if (Math.abs(a) < 1e-9) return centroid(pts);
+  return { x: cx / (3 * a), y: cy / (3 * a) };
+}
+
+/**
+ * Extensión del polígono sobre una recta horizontal (`axis: "y"`, a la altura `at`) o vertical
+ * (`axis: "x"`). Devuelve [mín, máx] sobre el otro eje, o null si la recta no lo cruza.
+ */
+export function chord(pts: readonly Pt[], axis: "x" | "y", at: number): [number, number] | null {
+  const hits: number[] = [];
+  for (let i = 0; i < pts.length; i++) {
+    const p = pts[i];
+    const q = pts[(i + 1) % pts.length];
+    const [a0, a1, b0, b1] = axis === "y" ? [p.y, q.y, p.x, q.x] : [p.x, q.x, p.y, q.y];
+    if ((a0 <= at && at < a1) || (a1 <= at && at < a0)) hits.push(b0 + ((at - a0) / (a1 - a0)) * (b1 - b0));
+  }
+  return hits.length ? [Math.min(...hits), Math.max(...hits)] : null;
+}
+
+export function pointInPolygon(pt: Pt, pts: readonly Pt[]): boolean {
+  let inside = false;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const a = pts[i];
+    const b = pts[j];
+    if (a.y > pt.y !== b.y > pt.y && pt.x < ((b.x - a.x) * (pt.y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
+  }
+  return inside;
+}
+
 export function bounds(pts: readonly Pt[]) {
   const xs = pts.map((p) => p.x);
   const ys = pts.map((p) => p.y);

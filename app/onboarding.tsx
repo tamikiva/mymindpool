@@ -69,13 +69,13 @@ export default function Onboarding() {
         return (
           <View key={i} style={[s.card, { borderLeftColor: color.fill }]}>
             <Field label={`Área ${i + 1}`} value={a.name} maxLength={40} onChangeText={(t) => setArea(i, { name: t })} />
-            <View style={s.row} accessibilityRole="radiogroup" accessibilityLabel={`Color de ${a.name || `área ${i + 1}`}`}>
+            <View style={s.row} role="radiogroup" accessibilityLabel={`Color de ${a.name || `área ${i + 1}`}`}>
               {areaColors.map((c) => (
                 <Pressable
                   key={c.key}
-                  accessibilityRole="radio"
+                  role="radio"
                   accessibilityLabel={c.key}
-                  accessibilityState={{ checked: c.key === a.color_key }}
+                  aria-checked={c.key === a.color_key}
                   onPress={() => setArea(i, { color_key: c.key })}
                   style={[s.swatch, { backgroundColor: c.fill }, c.key === a.color_key && s.swatchOn]}
                 >

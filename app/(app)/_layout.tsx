@@ -10,6 +10,7 @@ export default function AppLayout() {
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: palette.primary,
+        tabBarInactiveTintColor: palette.textMuted,
         tabBarLabelStyle: { fontSize: 14 },
         tabBarIconStyle: { display: "none" },
       }}

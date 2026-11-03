@@ -3,7 +3,8 @@ export const palette = {
   background: "#FAF9FC",
   text: "#392747",
   textMuted: "#6B5B7B",
-  primary: "#8065C4",
+  // Más oscuro que el #8065C4 del PRD §2: ese no llega a 4,5:1 como texto sobre el fondo claro (PRD pide verificar contraste).
+  primary: "#6A4FB3",
   wall: "#F1E9DC",
 } as const;
 
