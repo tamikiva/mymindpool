@@ -44,3 +44,11 @@ export async function completeOnboarding(
   });
   if (error) throw error;
 }
+
+export async function updateArea(
+  id: string,
+  patch: { name?: string; color_key?: string; capacity?: number; archived_at?: string },
+): Promise<void> {
+  const { error } = await getSupabase().from("areas").update(patch).eq("id", id);
+  if (error) throw error;
+}

@@ -64,6 +64,7 @@ beforeAll(async () => {
   `);
   await db.exec(readFileSync("supabase/migrations/0001_profiles_areas.sql", "utf8"));
   await db.exec(readFileSync("supabase/migrations/0002_tasks.sql", "utf8"));
+  await db.exec(readFileSync("supabase/migrations/0003_area_archive_guards.sql", "utf8"));
   await db.exec(`insert into auth.users values ('${A}'), ('${B}')`);
   await as(A, () => db.query("select public.complete_onboarding(null, $1::jsonb)", [areas]));
   await as(B, () => db.query("select public.complete_onboarding(null, $1::jsonb)", [areas]));
@@ -213,5 +214,47 @@ describe("completar y deshacer", () => {
       db.query("insert into public.tasks (user_id, area_id, title, scheduled_date) values ($1,$2,'Futura','2026-11-10')", [F, areaF]),
     );
     expect((await pendingLoad(F, areaF)).pending).toBe(0);
+  });
+});
+
+describe("archivar áreas", () => {
+  async function freshUser(hex: string, names: string[]) {
+    const u = `00000000-0000-0000-0000-0000000000${hex}`;
+    await db.exec(`insert into auth.users values ('${u}')`);
+    await as(u, () =>
+      db.query("select public.complete_onboarding(null, $1::jsonb)", [
+        JSON.stringify(names.map((name) => ({ name, color_key: "lila" }))),
+      ]),
+    );
+    const rows = await as(u, () => db.query<{ id: string; name: string }>("select id, name from public.areas"));
+    return { u, id: (n: string) => rows.rows.find((r) => r.name === n)!.id };
+  }
+  const archive = (u: string, area: string) =>
+    as(u, () => db.query("update public.areas set archived_at = now() where id = $1", [area]));
+
+  it("no archiva un área con pendientes; sí después de moverlos", async () => {
+    const { u, id } = await freshUser("10", ["Casa", "Trabajo", "Salud"]);
+    await addTask(u, id("Casa"), "Pendiente");
+    await expect(archive(u, id("Casa"))).rejects.toThrow(/pendientes/);
+    await as(u, () =>
+      db.query("update public.tasks set area_id = $1 where area_id = $2", [id("Trabajo"), id("Casa")]),
+    );
+    await expect(archive(u, id("Casa"))).resolves.toBeTruthy();
+    const kept = await as(u, () => db.query("select 1 from public.tasks where area_id = $1", [id("Trabajo")]));
+    expect(kept.rows).toHaveLength(1);
+  });
+
+  it("las tareas completadas no impiden archivar y se conservan", async () => {
+    const { u, id } = await freshUser("11", ["Casa", "Trabajo", "Salud"]);
+    const t = await addTask(u, id("Casa"), "Hecha");
+    await as(u, () => db.query("select public.complete_task($1)", [t]));
+    await expect(archive(u, id("Casa"))).resolves.toBeTruthy();
+    const kept = await as(u, () => db.query("select 1 from public.tasks where id = $1", [t]));
+    expect(kept.rows).toHaveLength(1);
+  });
+
+  it("siempre quedan al menos 2 áreas activas", async () => {
+    const { u, id } = await freshUser("12", ["Casa", "Trabajo"]);
+    await expect(archive(u, id("Casa"))).rejects.toThrow(/al menos 2/);
   });
 });

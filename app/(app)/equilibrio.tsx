@@ -1,5 +1,5 @@
-import { Redirect } from "expo-router";
-import { useCallback, useEffect, useState } from "react";
+import { Link, Redirect, useFocusEffect } from "expo-router";
+import { useCallback, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { Body, Button, Center, Field, Notice, Screen, Title } from "@/components/ui";
 import { completeTask, createTask, fetchOpenTasks, toLoadTask, undoCompleteTask, type Task } from "@/data/tasks";
@@ -34,9 +34,12 @@ export default function Equilibrio() {
       setError(authErrorMessage(e));
     }
   }, []);
-  useEffect(() => {
-    void load();
-  }, [load]);
+  // Con pestañas las pantallas siguen montadas: se recarga cada vez que vuelven a estar en foco.
+  useFocusEffect(
+    useCallback(() => {
+      void load();
+    }, [load]),
+  );
 
   if (error) {
     return (
@@ -115,6 +118,9 @@ export default function Equilibrio() {
       {area ? (
         <View style={s.item}>
           <Text style={s.itemName}>{area.name}</Text>
+          <Link href={{ pathname: "/area/[id]", params: { id: area.id } }} accessibilityLabel={`Abrir el área ${area.name}`} style={{ color: palette.primary, fontSize: 16, paddingVertical: 6 }}>
+            Abrir área
+          </Link>
           {areaTasks.length === 0 ? <Text style={s.muted}>No hay pendientes en esta área.</Text> : null}
           {areaTasks.map((t) => (
             <View key={t.id} style={s.taskRow}>

@@ -30,13 +30,17 @@ Pendiente / limitaciones:
 
 ## Hito 2 — Tareas y cerebro dinámico · en curso (2026-11-03)
 Hecho:
-- Migración `supabase/migrations/0002_tasks.sql`: tabla `tasks` con RLS, clave foránea compuesta `(area_id, user_id)` (una tarea no puede apuntar al área de otro usuario) y `complete_task` / `undo_complete_task` idempotentes. El nivel del agua se deriva de las filas; no hay contador guardado.
-- 13 pruebas nuevas con Postgres local (`tests/tasks.test.ts`): aislamiento entre usuarios, completar dos veces resta una sola vez, deshacer repone una sola vez, cancelar/eliminar libera carga sin contar como realizada, tarea futura no llena el agua, peso 2 en capacidad 8 = 25 %.
-- Mi equilibrio usa tareas reales: carga por área, tocar una pileta muestra sus tareas, entrada rápida, completar y deshacer. Un fallo de escritura muestra el error y conserva lo escrito.
-- `package-lock.json` resincronizado (`npm ci` fallaba).
-- `typecheck`, 43 pruebas y `export:web` en verde.
+- Migraciones `0002_tasks.sql` (tareas con RLS, clave foránea compuesta `(area_id, user_id)`, `complete_task` / `undo_complete_task` idempotentes) y `0003_area_archive_guards.sql` (no se archiva un área con pendientes ni quedan menos de 2 áreas activas). El agua se deriva de las filas; no hay contador guardado.
+- Dominio puro de filtros (`src/domain/taskFilters.ts`): Pendientes, Hoy, Vencidas, Futuras, Más adelante y Completadas; filtro por área y búsqueda sin tildes.
+- Pantallas: **Equilibrio** (carga real, entrada rápida, completar/deshacer), **Tareas** (vistas, área, búsqueda, completar/deshacer, nueva), **Editar tarea** (título, nota, área, tamaño, prioridad, fecha con validación, más adelante, cancelar/reabrir, eliminar con confirmación), **Área** (banda de carga, excedente, pendientes, editar nombre/color/referencia, archivar moviendo pendientes). Navegación inferior Equilibrio / Tareas. Las pantallas recargan al volver a enfocarse.
+- Un fallo de escritura muestra el error y conserva lo escrito.
+- Pruebas: 54 (RLS entre usuarios, completar/deshacer una sola vez, cancelar/eliminar sin contar como realizada, tarea futura, archivado, filtros) más el typecheck y `export:web` en verde.
+- Verificado en Chromium (390 px y 1200 px) con una **API simulada**: 21 recorridos (filtros, búsqueda, completar, deshacer, error de escritura con reintento, edición, eliminar con confirmación, cancelar, renombrar y archivar área) sin errores de consola. Capturas en `docs/capturas/`.
+- Se corrigió que, con pestañas, las listas quedaban desactualizadas tras editar.
 
-Pendiente:
-- Nada de esto se probó contra el Supabase real: requiere `EXPO_PUBLIC_SUPABASE_URL` y `EXPO_PUBLIC_SUPABASE_ANON_KEY` en el entorno y correr `0001` y `0002` en el SQL Editor. La red al host ya está habilitada.
-- Pantalla de Tareas con filtros, completadas, futuras y vencidas; edición, mover de área, pospone, eliminar con deshacer; peso/fecha en el formulario; pantalla de área; mover pendientes al archivar un área.
-- La interfaz de tareas no se verificó visualmente en navegador.
+Limitaciones reales:
+- **Nada se probó contra Supabase real** (faltan las variables; ver `docs/PENDIENTES_USUARIA.md`). La verificación de interfaz usó datos simulados.
+- Sin pruebas automáticas de componentes ni de las pantallas: el recorrido de Chromium se corrió a mano y su script no está en el repo.
+- No verificado: lector de pantalla, teclado, reducción de movimiento ni la onda breve al completar en el cerebro. Falta revisar el comportamiento con 2 y 8 áreas con datos.
+- Sin tiempo registrado (hito 4): el área muestra «sin registro».
+- Pospuestas del hito 2: ordenar por prioridad, recurrencias (hito 3), mover una tarea a otra área solo se hace desde Editar.

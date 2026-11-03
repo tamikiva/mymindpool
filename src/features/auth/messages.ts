@@ -21,3 +21,13 @@ export function validateEmail(v: string): string | null {
 export function validatePassword(v: string): string | null {
   return v.length >= 8 ? null : "La contraseña necesita al menos 8 caracteres.";
 }
+
+/** Errores de datos (tareas, áreas) en lenguaje comprensible; el resto cae en el mensaje general. */
+export function dataErrorMessage(err: unknown): string {
+  const e = err as { code?: string; message?: string };
+  const m = (e?.message ?? "").toLowerCase();
+  if (e?.code === "23505" || m.includes("duplicate key")) return "Ya tenés un área con ese nombre. Elegí otro.";
+  if (e?.code === "23514" || m.includes("check constraint")) return "Revisá los datos: alguno no es válido.";
+  if (e?.code === "23503" || m.includes("foreign key")) return "Esa área ya no está disponible. Actualizá y probá de nuevo.";
+  return authErrorMessage(err);
+}
