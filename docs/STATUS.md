@@ -48,7 +48,8 @@ Pruebas:
 - `npm run ui-check`: 119 comprobaciones en Chromium (390 y 1200 px) **con una API simulada**, sin errores de consola.
 
 Limitaciones reales (lo que NO está hecho):
-- **Nada se validó contra Supabase real** (ver `docs/VALIDACION_SUPABASE.md` y `docs/PENDIENTES_USUARIA.md`). Los tres niveles —Postgres local, navegador con API simulada y Supabase real— se reportan por separado (D-013).
+- **Validado contra Supabase real (2026-11-04):** las migraciones 0001–0007 se aplicaron con `supabase/all-migrations.sql` (una transacción) y `supabase/verify.sql` dio 101/101 OK; `npm run validate:supabase` dio 25/25 OK (aislamiento entre dos cuentas, onboarding idempotente, completar/deshacer, sin acceso anónimo). En esta sesión Node necesita `NODE_USE_ENV_PROXY=1 NODE_EXTRA_CA_CERTS=/root/.ccr/ca-bundle.crt` para salir por el proxy.
+- **Sigue sin validar contra Supabase real:** rutinas, plan del día y tareas repetidas (solo Postgres local), confirmación de email y recuperación por enlace (requieren sitio publicado), sesión en iOS/Android. Los tres niveles —Postgres local, navegador con API simulada y Supabase real— se reportan por separado (D-013).
 - Alcance del PRD §10–§12 que falta: frecuencia/recurrencia de **rutinas** (solo hay de tareas); las repeticiones **no entran** al plan del día; convertir una tarea en rutina; duración por paso en la interfaz (el esquema la guarda); «cuándo, dónde y después de qué acción» para hábitos más allá de la señal de la rutina; encadenar «Después de X, hago Y» entre rutinas; sugerencias de cambio de área entre pasos (hito 5).
 - «Hoy» usa la fecha del dispositivo; falta usar la zona horaria del perfil (`profiles.timezone`) y documentar cómo afecta cambiar de zona.
 - No se probó con lector de pantalla real ni con Safari iOS/dispositivos; solo axe-core, teclado y emulación de zoom/movimiento.
