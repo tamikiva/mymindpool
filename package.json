@@ -45,7 +45,8 @@
     "export:web": "expo export --platform web",
     "ui-check": "node scripts/ui-check.mjs",
     "validate:supabase": "node scripts/validate-supabase.mjs",
-    "brain-lab": "node scripts/brain3d-lab/run.mjs"
+    "brain-lab": "node scripts/brain3d-lab/run.mjs",
+    "build:sql": "node scripts/sql-bundle.mjs"
   },
   "private": true
 }
