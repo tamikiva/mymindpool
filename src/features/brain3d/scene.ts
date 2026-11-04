@@ -7,10 +7,11 @@
  */
 import * as THREE from "three";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
-import { pointInPolygon } from "../brain/geometry";
-import { BASE_H, BEVEL, DEPTH, FOV, LABEL_MAX_FONT, LABEL_MIN_FONT, LABEL_SCALE, OCCLUSION, TILT, TOTAL_H } from "./constants";
-import { placeLabelRotated } from "./labelPlacement";
+import { BASE_H, BEVEL, DEPTH, FOV, LABEL_SCALE, OCCLUSION, TILT, TOTAL_H } from "./constants";
+import { fitName } from "./labelFit";
 import { buildBrainLayout, polygonArea, visibleFloor, type BrainLayout, type Pt } from "./layout";
+import { buildFloat, buildLadder, buildPlant, buildSteps, type PlantKind } from "./props";
+import { floatCenterY, planProps, type LabelRect } from "./propsPlacement";
 
 export interface SceneArea {
   id: string;
@@ -327,6 +328,10 @@ interface Pool {
   ring: THREE.Mesh;
   deep: string;
   floating?: THREE.Object3D;
+  floatRipple?: THREE.Mesh;
+  floatPhase: number;
+  /** Piso que se ve (sin la franja que tapa la pared cercana); se calcula al ubicar el nombre. */
+  visible?: Pt[];
   current: number;
   target: number;
 }
@@ -371,6 +376,7 @@ export class BrainScene {
   private draining = false;
   private propsAdded = false;
   private idleClock = 0;
+  private time = 0;
 
   constructor(private readonly canvas: HTMLCanvasElement, private readonly opts: SceneOptions = {}) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: "low-power" });
@@ -640,7 +646,7 @@ export class BrainScene {
     ring.visible = area.id === this.selected;
     group.add(ring);
 
-    const pool: Pool = { id: area.id, name: "", deep: "", poly, group, water, surface, waterline, wallWater, caustics, label, hit, ring, current: this.reduce ? clamp01(area.level) : 0, target: clamp01(area.level) };
+    const pool: Pool = { id: area.id, name: "", deep: "", poly, group, water, surface, waterline, wallWater, caustics, label, hit, ring, current: this.reduce ? clamp01(area.level) : 0, target: clamp01(area.level), floatPhase: i * 1.7 };
     this.pools.push(pool);
     if (this.opts.labels !== false) this.enqueueLabel(pool, area);
     this.applyLevel(pool);
@@ -677,23 +683,20 @@ export class BrainScene {
     pool.name = area.name;
     pool.deep = area.deep;
     // Solo se usa la parte del piso que se ve (la pared cercana tapa una franja).
-    const scaled = visibleFloor(pool.poly, OCCLUSION).map((p) => ({ x: p.x * LABEL_SCALE, y: p.y * LABEL_SCALE }));
-    const { label, cx, cy, angle } = placeLabelRotated(scaled, area.name, LABEL_MAX_FONT, undefined, LABEL_MIN_FONT);
-    const fontW = label.fontSize / LABEL_SCALE;
-    const maxChars = Math.max(...label.lines.map((l) => l.length), 1);
-    const w = maxChars * fontW * 0.62 * 1.1 + 0.1;
-    const h = label.lines.length * fontW * 1.1 + 0.1;
+    pool.visible = visibleFloor(pool.poly, OCCLUSION);
+    const { lines, fontW, rect } = fitName(pool.poly, area.name);
+    const { x, y, w, h, angle } = rect;
     const mat = pool.label.material as THREE.MeshBasicMaterial;
     mat.map?.dispose();
-    mat.map = labelTexture(label.lines, fontW, mix(area.deep, "#1b1030", 0.25).getStyle(), w, h);
+    mat.map = labelTexture(lines, fontW, mix(area.deep, "#1b1030", 0.25).getStyle(), w, h);
     mat.needsUpdate = true;
     pool.label.geometry.dispose();
     pool.label.geometry = new THREE.PlaneGeometry(w, h).rotateX(-Math.PI / 2);
-    pool.label.position.set(cx / LABEL_SCALE, 0.012, cy / LABEL_SCALE);
+    pool.label.position.set(x, 0.012, y);
     // En el plano del piso (x, z = y del dibujo) girar «angle» hacia abajo equivale a rotar -angle sobre y.
     pool.label.rotation.y = -angle;
     pool.label.visible = true;
-    pool.label.userData.center = { x: cx / LABEL_SCALE, y: cy / LABEL_SCALE, w, h };
+    pool.label.userData.rect = rect;
   }
 
   /** Altura del agua, opacidad según profundidad y visibilidad del brillo del fondo. */
@@ -714,98 +717,58 @@ export class BrainScene {
     const wet = Math.min(1, Math.max(0, (p.current - 0.04) / 0.3));
     (p.caustics.material as THREE.MeshBasicMaterial).opacity = 0.34 * wet;
     (p.surface.material as THREE.MeshPhysicalMaterial).opacity = 0.14 * wet;
-    if (p.floating) p.floating.position.y = h + 0.02;
+    this.placeFloat(p);
+  }
+
+  /** El flotador acompaña la altura del agua (con su calado); sin agua descansa en el fondo. */
+  private placeFloat(p: Pool): void {
+    if (!p.floating) return;
+    const h = p.current * MAX_WATER;
+    const has = p.current > 0.004 && this.opts.water !== false;
+    const bob = has && !this.reduce ? Math.sin(this.time * 1.3 + p.floatPhase) : 0;
+    p.floating.position.y = (has ? floatCenterY(h) : floatCenterY(0)) + bob * 0.01;
+    p.floating.rotation.x = bob * 0.025;
+    p.floating.rotation.z = Math.cos(this.time * 1.1 + p.floatPhase) * (has && !this.reduce ? 0.02 : 0);
+    if (p.floatRipple) {
+      p.floatRipple.visible = has;
+      p.floatRipple.position.y = h + 0.008;
+    }
   }
 
   // ---------- adornos ----------
 
   private addProps(layout: BrainLayout): void {
-    const glossy = (color: number) => new THREE.MeshPhysicalMaterial({ color, roughness: 0.3, clearcoat: 0.8, clearcoatRoughness: 0.2 });
-
-    // Flotadores en algunas piletas, lejos del nombre.
-    this.pools.forEach((pool, i) => {
-      if (i % 3 !== 0 || layout.pools[i].area < 4) return;
-      const spot = this.freeSpot(pool, 0.55);
-      if (!spot) return;
-      const ring = new THREE.Group();
-      const body = new THREE.Mesh(new THREE.TorusGeometry(0.34, 0.12, 14, 36).rotateX(Math.PI / 2), glossy(0xfff4f1));
-      const stripe = new THREE.Mesh(new THREE.TorusGeometry(0.34, 0.125, 14, 36, Math.PI / 2).rotateX(Math.PI / 2), glossy(0xf4a6c0));
-      const stripe2 = stripe.clone();
-      stripe2.rotation.y = Math.PI;
-      ring.add(body, stripe, stripe2);
-      ring.position.set(spot.x, 0, spot.y);
-      this.root.add(ring);
-      pool.floating = ring;
-      this.applyLevel(pool);
+    const polys = this.pools.map((p) => p.poly);
+    const rects = this.pools.map((p) => p.label.userData.rect as LabelRect | undefined);
+    const plan = planProps({
+      outline: layout.outline,
+      pools: polys,
+      visible: this.pools.map((p) => p.visible ?? visibleFloor(p.poly, OCCLUSION)),
+      labels: rects,
+      bounds: layout.bounds,
     });
-
-    // Escalera en el borde trasero de una pileta.
-    // La escalera está apagada por ahora: con las paredes nuevas no encaja en el borde.
-    const ladderPool = undefined as Pool | undefined;
-    if (ladderPool) {
-      const back = ladderPool.poly.reduce((m, p) => (p.y < m.y ? p : m), ladderPool.poly[0]);
-      const steel = new THREE.MeshStandardMaterial({ color: 0xe9eef2, metalness: 0.85, roughness: 0.22, envMapIntensity: 1.2 });
-      const g = new THREE.Group();
-      for (const dx of [-0.2, 0.2]) {
-        const curve = new THREE.CatmullRomCurve3([
-          new THREE.Vector3(dx, 0.05, 0.55),
-          new THREE.Vector3(dx, TOTAL_H + 0.45, 0.1),
-          new THREE.Vector3(dx, TOTAL_H + 0.38, -0.12),
-          new THREE.Vector3(dx, 0.12, -0.5),
-        ]);
-        g.add(new THREE.Mesh(new THREE.TubeGeometry(curve, 24, 0.028, 8), steel));
-      }
-      for (const t of [0.12, 0.3, 0.48]) {
-        const rung = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.4, 8).rotateZ(Math.PI / 2), steel);
-        rung.position.set(0, TOTAL_H * (1 - t) - 0.05, -0.12 - t * 0.9 + 0.4);
-        g.add(rung);
-      }
-      g.position.set(back.x, 0, back.y + 0.3);
-      this.root.add(g);
+    if (plan.ladder) this.root.add(buildLadder(plan.ladder.spot));
+    for (const { pool, spot } of plan.steps) {
+      const tint = mix(this.areas[pool]?.fill ?? "#B7A3EE", "#ffffff", 0.6);
+      this.root.add(buildSteps(spot, tint, this.tiles));
     }
-
-    // Plantas sobre el borde, donde la pared tiene espacio.
-    const leaf = new THREE.MeshStandardMaterial({ color: 0x5fb98a, roughness: 0.55, side: THREE.DoubleSide });
-    const leaf2 = new THREE.MeshStandardMaterial({ color: 0x3f9a6e, roughness: 0.55, side: THREE.DoubleSide });
-    // Solo en el borde trasero: así ningún adorno tapa una pileta.
-    const midY = (layout.bounds.minY + layout.bounds.maxY) / 2;
-    layout.rimSpots.filter((r) => r.y < midY).slice(0, 3).forEach((s, i) => {
-      const g = new THREE.Group();
-      const pot = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.15, 0.22, 16), new THREE.MeshStandardMaterial({ color: 0xf2e7d5, roughness: 0.5 }));
-      pot.position.y = 0.11;
-      g.add(pot);
-      for (let k = 0; k < 7; k++) {
-        const l = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.62, 5, 1).translate(0, 0.31, 0), k % 2 ? leaf : leaf2);
-        const a = (k / 7) * Math.PI * 2 + i;
-        l.rotation.set(0.55 * Math.cos(a), 0, -0.55 * Math.sin(a));
-        l.scale.set(1, 1, 0.45);
-        l.position.y = 0.2;
-        g.add(l);
-      }
-      g.position.set(s.x, TOTAL_H, s.y);
-      this.root.add(g);
+    const stripes = [0xf08fb0, 0x6cbcf2];
+    plan.floats.forEach(({ pool, at }, k) => {
+      const pl = this.pools[pool];
+      const { group, ripple } = buildFloat(stripes[k % stripes.length]);
+      group.position.set(at.x, floatCenterY(0), at.y);
+      ripple.position.set(at.x, 0, at.y);
+      this.root.add(group, ripple);
+      pl.floating = group;
+      pl.floatRipple = ripple;
+      this.applyLevel(pl);
     });
-  }
-
-  /** Punto de la pileta lo más lejos posible del nombre, con holgura al borde. */
-  private freeSpot(pool: Pool, clearance: number): Pt | null {
-    const c = pool.label.userData.center as { x: number; y: number; w: number; h: number } | undefined;
-    const xs = pool.poly.map((p) => p.x);
-    const ys = pool.poly.map((p) => p.y);
-    let best: { p: Pt; score: number } | null = null;
-    for (let x = Math.min(...xs); x <= Math.max(...xs); x += 0.2) {
-      for (let y = Math.min(...ys); y <= Math.max(...ys); y += 0.2) {
-        const p = { x, y };
-        if (!pointInPolygon(p, pool.poly)) continue;
-        const edge = Math.min(...pool.poly.map((q) => Math.hypot(q.x - x, q.y - y)));
-        if (edge < clearance) continue;
-        const away = c ? Math.hypot((x - c.x) / (c.w / 2 + 0.5), (y - c.y) / (c.h / 2 + 0.5)) : 1;
-        if (away < 1.7) continue;
-        const score = edge + away;
-        if (!best || score > best.score) best = { p, score };
-      }
-    }
-    return best?.p ?? null;
+    const kinds: PlantKind[] = ["fern", "succulent", "bush"];
+    plan.plants.forEach((s, i) => {
+      const plant = buildPlant(kinds[i % kinds.length], i + 1);
+      plant.position.set(s.x, TOTAL_H, s.y);
+      this.root.add(plant);
+    });
   }
 
   // ---------- cámara y dibujo ----------
@@ -871,6 +834,8 @@ export class BrainScene {
     if (idle && this.idleClock >= 0.05) {
       const t = this.idleClock;
       this.idleClock = 0;
+      this.time += t;
+      this.pools.forEach((p) => this.placeFloat(p));
       this.caustic.offset.x = (this.caustic.offset.x + t * 0.022) % 1;
       this.caustic.offset.y = (this.caustic.offset.y + t * 0.014) % 1;
       this.ripple.offset.x = (this.ripple.offset.x + t * 0.012) % 1;

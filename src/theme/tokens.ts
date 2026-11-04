@@ -1,7 +1,7 @@
 // Tokens iniciales del PRD §2. Sujetos a ajuste visual; no son una extracción exacta del boceto.
 export const palette = {
-  // Fondo crema (referencias visuales); el #FAF9FC del PRD §2 era más frío.
-  background: "#FCF8F2",
+  // Fondo verde menta muy claro, tipo pasto suave (pedido de la usuaria, 2026-11-04); antes crema #FCF8F2.
+  background: "#EFF8F1",
   card: "#FFFFFF",
   border: "#EFE6DA",
   text: "#392747",

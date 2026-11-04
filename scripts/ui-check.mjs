@@ -814,7 +814,7 @@ async function motion() {
 }
 
 // ---------- 4. Cerebro con 2 y 8 áreas ----------
-/** Proporción de píxeles de la captura que no son el fondo crema: detecta un lienzo en blanco. */
+/** Proporción de píxeles de la captura que no son el color de fondo: detecta un lienzo en blanco. */
 async function inkRatio(page, buf) {
   return page.evaluate(async (b64) => {
     const img = new Image();

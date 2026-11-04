@@ -16,7 +16,9 @@ if (Platform.OS === "web" && typeof document !== "undefined" && !document.getEle
     [400, 600, 700, 800]
       .map((w) => `@font-face{font-family:"Nunito";font-weight:${w};font-display:swap;src:url("/fonts/Nunito-${w}.ttf") format("truetype")}`)
       .join("") +
-    `body,body *{font-family:"Nunito",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif !important}`;
+    `body,body *{font-family:"Nunito",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif !important}` +
+    // El fondo de la página (también tras el rebote de desplazamiento) es el mismo de las pantallas.
+    `html,body{background-color:${palette.background}}`;
   document.head.appendChild(st);
 }
 
