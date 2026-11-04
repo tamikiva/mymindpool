@@ -88,3 +88,8 @@ Sin verificar: iPhone/Safari reales y rendimiento en celulares de gama media (to
 
 ## Siguiente
 Validar contra Supabase real; después Hito 4 (tiempo y metas).
+
+## Publicación web (2026-11-04)
+- Se conectó el repositorio a Vercel (`vercel.json`: compila con `expo export --platform web`, carpeta `dist`, redirige todo a `index.html`). Variables en Vercel: `EXPO_PUBLIC_SUPABASE_URL` y `EXPO_PUBLIC_SUPABASE_ANON_KEY` (solo la clave publishable).
+- `main` es una versión vieja sin `vercel.json`; por eso el primer deploy dio 404. La rama de trabajo se publica primero como vista previa y después se fija como rama de producción.
+- Pendiente: al tener la dirección definitiva, actualizar **Site URL** y **Redirect URLs** en Supabase (Authentication → URL Configuration).
